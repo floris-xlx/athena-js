@@ -6,11 +6,15 @@
  */
 
 // Athena client
-export { createClient, AthenaClient } from './supabase.js'
-export { Backend } from './gateway/types.js'
+export { createClient, AthenaClient } from "./supabase.js";
+export { Backend } from "./gateway/types.js";
 export type {
   SupabaseClient,
   TableQueryBuilder,
   SupabaseResult,
-} from './supabase.js'
-export type { BackendType, BackendConfig, AthenaGatewayCallOptions } from './gateway/types.js'
+} from "./supabase.js";
+export type {
+  BackendType,
+  BackendConfig,
+  AthenaGatewayCallOptions,
+} from "./gateway/types.js";
