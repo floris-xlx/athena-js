@@ -195,6 +195,41 @@ test('deleteGateway sends delete payload', async () => {
   }
 })
 
+test('rpcGateway sends rpc payload', async () => {
+  const { calls, restore } = mockFetch()
+  try {
+    const client = createAthenaGatewayClient({ baseUrl: 'https://athena-db.com' })
+    await client.rpcGateway({
+      function: 'list_users',
+      args: { role: 'admin' },
+      select: 'id,name',
+    })
+    const body = JSON.parse(calls[0].init?.body as string)
+    assert.equal(body.function, 'list_users')
+    assert.deepEqual(body.args, { role: 'admin' })
+    assert.equal(body.select, 'id,name')
+    assert.equal(calls[0].init?.method, 'POST')
+    assert.ok(calls[0].url.endsWith('/gateway/rpc'))
+  } finally {
+    restore()
+  }
+})
+
+test('rpcGateway surfaces count from response envelope', async () => {
+  const original = globalThis.fetch
+  globalThis.fetch = async () =>
+    new Response(JSON.stringify({ data: [{ id: 1 }], count: 12 }), { status: 200 })
+  try {
+    const client = createAthenaGatewayClient({ baseUrl: 'https://athena-db.com' })
+    const response = await client.rpcGateway<{ id: number }[]>({ function: 'list_users' })
+    assert.equal(response.ok, true)
+    assert.equal(response.count, 12)
+    assert.deepEqual(response.data, [{ id: 1 }])
+  } finally {
+    globalThis.fetch = original
+  }
+})
+
 test('fetchGateway merges config and call headers', async () => {
   const { calls, restore } = mockFetch()
   try {

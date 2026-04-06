@@ -8,6 +8,10 @@ interface UserRow {
 
 declare function acceptsUserPromise(value: Promise<SupabaseResult<UserRow>>): void
 declare function acceptsUserArrayPromise(value: Promise<SupabaseResult<UserRow[]>>): void
+declare function acceptsUserArrayWithCountPromise(
+  value: Promise<SupabaseResult<UserRow[]>>,
+): void
+declare function acceptsCountValue(value: number | null | undefined): void
 
 declare function acceptsMaybeUserPromise(value: Promise<SupabaseResult<UserRow | null>>): void
 declare function acceptsMaybeUserPickPromise(
@@ -45,6 +49,13 @@ acceptsMaybeUserPickPromise(idOnlySelect.maybeSingle())
 acceptsMaybeUserPromise(users.single())
 acceptsMaybeUserPromise(users.maybeSingle())
 
+const listUsersRpc = client.rpc<UserRow>('list_users', { active_only: true })
+acceptsUserArrayPromise(listUsersRpc.select())
+acceptsMaybeUserPromise(listUsersRpc.single())
+acceptsMaybeUserPromise(listUsersRpc.maybeSingle())
+acceptsUserArrayWithCountPromise(client.rpc<UserRow>('list_users', {}, { count: 'exact' }).select())
+client.rpc<UserRow>('list_users').select().then(result => acceptsCountValue(result.count))
+
 // @ts-expect-error insert(one) should not be inferred as array result
 acceptsUserArrayPromise(users.insert({ id: "1", name: "Alice" }).select())
 
@@ -56,6 +67,9 @@ acceptsUserArrayPromise(users.upsert({ id: "1", name: "Alice" }, { onConflict: "
 
 // @ts-expect-error upsert(many) should not be inferred as single-row result
 acceptsUserPromise(users.upsert([{ id: "1", name: "Alice" }], { onConflict: "id" }).select())
+
+// @ts-expect-error rpc count only supports "exact"
+client.rpc<UserRow>('list_users', {}, { count: 'planned' })
 
 declare function acceptsUserPickArrayPromise(
   value: PromiseLike<SupabaseResult<Array<Pick<UserRow, "id">>>>,

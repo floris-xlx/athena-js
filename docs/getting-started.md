@@ -213,7 +213,25 @@ const { data: deleted } = await athena
 
 Delete requires a `.eq("resource_id", …)`, `.eq("id", …)`, or `options.resourceId` — calling `.delete()` without one throws an error.
 
-## 11. React hook
+## 11. RPC
+
+Use `.rpc()` to call Postgres functions via `POST /gateway/rpc` with a chainable API.
+
+```ts
+const { data, count } = await athena
+  .rpc("list_users", { role: "admin" }, { schema: "public", count: "exact" })
+  .eq("active", true)
+  .order("created_at", { ascending: false })
+  .range(0, 24)
+  .select(["id", "email"]);
+
+const { data: user } = await athena
+  .rpc<{ id: number; email: string }>("list_users", { role: "admin" })
+  .single("id,email");
+```
+
+RPC chain supports: `.eq()`, `.neq()`, `.gt()`, `.gte()`, `.lt()`, `.lte()`, `.like()`, `.ilike()`, `.is()`, `.in()`, `.order()`, `.limit()`, `.offset()`, `.range()`, `.select()`, `.single()`, `.maybeSingle()`.
+## 12. React hook
 
 Use `useAthenaGateway` for client-side calls with loading and error state managed by React.
 
@@ -251,11 +269,11 @@ export function UserList() {
 }
 ```
 
-The hook also exposes `insertGateway`, `updateGateway`, and `deleteGateway` for mutations, plus `lastRequest` and `lastResponse` for debugging.
+The hook also exposes `insertGateway`, `updateGateway`, `deleteGateway`, and `rpcGateway` for mutations, plus `lastRequest` and `lastResponse` for debugging.
 
-## 12. Error handling
+## 13. Error handling
 
-All query methods return `{ data, error, status, raw }`. Check `error` before using `data`.
+All query methods return `{ data, error, status, count?, raw }`. Check `error` before using `data`.
 
 ```ts
 const { data, error, status } = await athena.from("users").select();
@@ -269,9 +287,9 @@ if (error) {
 // data is typed as User[] | null here
 ```
 
-The React hook sets `error` state automatically and throws from the gateway functions — use `try/catch` around `insertGateway`, `updateGateway`, and `deleteGateway` calls.
+The React hook sets `error` state automatically and throws from the gateway functions — use `try/catch` around `insertGateway`, `updateGateway`, `deleteGateway`, and `rpcGateway` calls.
 
-## 13. Local validation commands
+## 14. Local validation commands
 
 Before opening a PR, run:
 

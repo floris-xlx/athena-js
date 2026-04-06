@@ -3,6 +3,8 @@ import type {
   AthenaGatewayCallOptions,
   AthenaGatewayEndpointPath,
   AthenaGatewayMethod,
+  AthenaRpcCallOptions,
+  AthenaRpcPayload,
   AthenaGatewayResponse,
 } from "./types.js";
 import type {
@@ -141,11 +143,20 @@ async function callAthena<T>(
       "data" in parsedPayload
         ? (parsedPayload.data as T)
         : (parsed as T);
+    const payloadCount =
+      parsedPayload &&
+      typeof parsedPayload === "object" &&
+      "count" in parsedPayload
+        ? (typeof parsedPayload.count === "number" || parsedPayload.count === null
+          ? (parsedPayload.count as number | null)
+          : undefined)
+        : undefined;
 
     return {
       ok: response.ok,
       status: response.status,
       data: payloadData ?? null,
+      count: payloadCount,
       error: hasError,
       raw: parsed,
     };
@@ -181,6 +192,10 @@ export interface AthenaGatewayClient {
     payload: AthenaDeletePayload,
     options?: AthenaGatewayCallOptions,
   ): Promise<AthenaGatewayResponse<T>>;
+  rpcGateway<T>(
+    payload: AthenaRpcPayload,
+    options?: AthenaRpcCallOptions,
+  ): Promise<AthenaGatewayResponse<T>>;
 }
 
 export function createAthenaGatewayClient(
@@ -202,6 +217,9 @@ export function createAthenaGatewayClient(
     },
     deleteGateway(payload, options) {
       return callAthena(config, "/gateway/delete", "DELETE", payload, options);
+    },
+    rpcGateway(payload, options) {
+      return callAthena(config, "/gateway/rpc", "POST", payload, options);
     },
   };
 }

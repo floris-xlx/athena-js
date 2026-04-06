@@ -11,6 +11,8 @@ import type {
   AthenaGatewayResponse,
   AthenaGatewayResponseLog,
   AthenaInsertPayload,
+  AthenaRpcCallOptions,
+  AthenaRpcPayload,
   AthenaUpdatePayload,
 } from "./types.js";
 import { createAthenaGatewayClient } from "./client.js";
@@ -188,11 +190,23 @@ export function useAthenaGateway(
     [callWithLifecycle, client],
   );
 
+  const rpcGateway = useCallback(
+    <T = unknown>(payload: AthenaRpcPayload, options?: AthenaRpcCallOptions) =>
+      callWithLifecycle<T>(() => client.rpcGateway<T>(payload, options), {
+        endpoint: "/gateway/rpc",
+        method: "POST",
+        payload,
+        options,
+      }),
+    [callWithLifecycle, client],
+  );
+
   return {
     fetchGateway,
     insertGateway,
     updateGateway,
     deleteGateway,
+    rpcGateway,
     isLoading,
     error,
     lastRequest,

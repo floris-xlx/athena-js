@@ -33,6 +33,11 @@ Creates and returns a `SupabaseClient` bound to the given URL and API key. All r
 ```ts
 interface SupabaseClient {
   from<Row = unknown>(table: string): TableQueryBuilder<Row>
+  rpc<Row = unknown, Args extends Record<string, unknown> = Record<string, unknown>>(
+    fn: string,
+    args?: Args,
+    options?: AthenaRpcCallOptions,
+  ): RpcQueryBuilder<Row>
 }
 ```
 
@@ -46,6 +51,27 @@ Returns a `TableQueryBuilder` scoped to the named table. Pass a type argument to
 
 ```ts
 const builder = athena.from<User>("users");
+```
+
+### .rpc(functionName, args?, options?)
+
+```ts
+athena.rpc<Row = unknown, Args extends Record<string, unknown> = Record<string, unknown>>(
+  fn: string,
+  args?: Args,
+  options?: AthenaRpcCallOptions,
+): RpcQueryBuilder<Row>
+```
+
+Creates a chainable RPC query against `POST /gateway/rpc`.
+
+```ts
+const { data, count } = await athena
+  .rpc("list_users", { role: "admin" }, { schema: "public", count: "exact" })
+  .eq("active", true)
+  .order("created_at", { ascending: false })
+  .range(0, 24)
+  .select(["id", "email"]);
 ```
 
 ---
@@ -209,6 +235,38 @@ interface MutationQuery<Result> extends PromiseLike<SupabaseResult<Result>> {
 
 ---
 
+## RpcQueryBuilder
+
+Returned by `athena.rpc(...)`. It is awaitable and executes exactly once.
+
+```ts
+interface RpcQueryBuilder<Row> extends PromiseLike<SupabaseResult<Row[]>> {
+  eq(column, value): RpcQueryBuilder<Row>
+  neq(column, value): RpcQueryBuilder<Row>
+  gt(column, value): RpcQueryBuilder<Row>
+  gte(column, value): RpcQueryBuilder<Row>
+  lt(column, value): RpcQueryBuilder<Row>
+  lte(column, value): RpcQueryBuilder<Row>
+  like(column, value): RpcQueryBuilder<Row>
+  ilike(column, value): RpcQueryBuilder<Row>
+  is(column, value): RpcQueryBuilder<Row>
+  in(column, values): RpcQueryBuilder<Row>
+  order(column, options?: { ascending?: boolean }): RpcQueryBuilder<Row>
+  limit(count): RpcQueryBuilder<Row>
+  offset(count): RpcQueryBuilder<Row>
+  range(from, to): RpcQueryBuilder<Row>
+  select(columns?: string | string[], options?: AthenaRpcCallOptions): Promise<SupabaseResult<Row[]>>
+  single(columns?: string | string[], options?: AthenaRpcCallOptions): Promise<SupabaseResult<Row | null>>
+  maybeSingle(columns?: string | string[], options?: AthenaRpcCallOptions): Promise<SupabaseResult<Row | null>>
+}
+```
+
+`AthenaRpcCallOptions` extends gateway call options with:
+- `schema?: string`
+- `count?: "exact"`
+
+---
+
 ## Contributor validation scripts
 
 ```bash
@@ -227,6 +285,7 @@ interface SupabaseResult<T> {
   data: T | null      // response payload, null on error
   error: string | null // error message, null on success
   status: number       // HTTP status code
+  count?: number | null // optional exact count (RPC / count-enabled calls)
   raw: unknown         // unprocessed response body
 }
 ```
@@ -263,13 +322,14 @@ React hook that wraps the Athena gateway client with React state for loading, er
 | `insertGateway` | `(payload, options?) => Promise<AthenaGatewayResponse>` | insert rows |
 | `updateGateway` | `(payload, options?) => Promise<AthenaGatewayResponse>` | update rows |
 | `deleteGateway` | `(payload, options?) => Promise<AthenaGatewayResponse>` | delete a row |
+| `rpcGateway` | `(payload, options?) => Promise<AthenaGatewayResponse>` | execute RPC |
 | `isLoading` | `boolean` | `true` while a request is in flight |
 | `error` | `string \| null` | error message from the most recent request, or `null` |
 | `lastRequest` | `AthenaGatewayCallLog \| null` | metadata about the most recent request |
 | `lastResponse` | `AthenaGatewayResponseLog \| null` | response from the most recent request |
 | `baseUrl` | `string` | resolved base URL of the client |
 
-`insertGateway`, `updateGateway`, and `deleteGateway` throw on non-OK responses. Wrap them in `try/catch` or handle rejection in `.catch()`.
+`insertGateway`, `updateGateway`, `deleteGateway`, and `rpcGateway` throw on non-OK responses. Wrap them in `try/catch` or handle rejection in `.catch()`.
 
 ---
 
@@ -292,6 +352,18 @@ Options for builder methods (`.select()`, `.insert()`, etc.) and the React hook.
 | `defaultToNull` | `boolean` | write explicit `null` for missing fields (insert / upsert) |
 | `onConflict` | `string \| string[]` | conflict resolution column(s) for upsert |
 | `updateBody` | `Record<string, unknown>` | fields to update on conflict (upsert) |
+
+---
+
+## AthenaRpcCallOptions
+
+RPC call options accepted by `athena.rpc(..., options)` and `.select/.single/.maybeSingle` on `RpcQueryBuilder`.
+
+| Option | Type | Description |
+|--------|------|-------------|
+| all `AthenaGatewayCallOptions` | inherited | base URL, headers, client, auth, etc. |
+| `schema` | `string` | schema used for RPC execution |
+| `count` | `"exact"` | request exact row count in RPC responses |
 
 ---
 
@@ -357,6 +429,43 @@ interface AthenaDeletePayload {
 }
 ```
 
+### AthenaRpcPayload
+
+```ts
+interface AthenaRpcPayload {
+  function: string
+  schema?: string
+  args?: Record<string, unknown>
+  select?: string
+  filters?: AthenaRpcFilter[]
+  count?: "exact"
+  limit?: number
+  offset?: number
+  order?: AthenaRpcOrder
+}
+```
+
+### AthenaRpcFilter
+
+```ts
+type AthenaRpcFilterOperator = "eq" | "neq" | "gt" | "gte" | "lt" | "lte" | "like" | "ilike" | "is" | "in"
+
+interface AthenaRpcFilter {
+  column: string
+  operator: AthenaRpcFilterOperator
+  value?: string | number | boolean | null | Array<string | number | boolean | null>
+}
+```
+
+### AthenaRpcOrder
+
+```ts
+interface AthenaRpcOrder {
+  column: string
+  ascending?: boolean
+}
+```
+
 ### AthenaGatewayCondition
 
 ```ts
@@ -380,6 +489,7 @@ interface AthenaGatewayResponse<T = unknown> {
   ok: boolean        // true when HTTP status is 2xx
   status: number     // HTTP status code
   data: T | null     // parsed response body, null on error
+  count?: number | null // optional count (RPC exact count)
   error?: string     // error message extracted from the response
   raw: unknown       // unprocessed parsed body
 }
@@ -395,7 +505,7 @@ Recorded for every request made through the hook:
 
 ```ts
 interface AthenaGatewayCallLog {
-  endpoint: "/gateway/fetch" | "/gateway/insert" | "/gateway/update" | "/gateway/delete"
+  endpoint: "/gateway/fetch" | "/gateway/insert" | "/gateway/update" | "/gateway/delete" | "/gateway/rpc"
   method: "POST" | "PUT" | "DELETE"
   payload: unknown
   headers: Record<string, string>

@@ -7,6 +7,10 @@ import type {
   AthenaGatewayCondition,
   AthenaGatewayResponse,
   AthenaInsertPayload,
+  AthenaRpcCallOptions,
+  AthenaRpcFilter,
+  AthenaRpcFilterOperator,
+  AthenaRpcPayload,
   AthenaUpdatePayload,
 } from './gateway/types.ts'
 import type { BackendConfig, BackendType } from './gateway/types.ts'
@@ -16,6 +20,7 @@ export interface SupabaseResult<T> {
   data: T | null
   error: string | null
   status: number
+  count?: number | null
   raw: unknown
 }
 
@@ -50,12 +55,16 @@ export interface MutationQuery<Result> extends PromiseLike<SupabaseResult<Result
 }
 
 function formatResult<T>(response: AthenaGatewayResponse<T>): SupabaseResult<T> {
-  return {
+  const result: SupabaseResult<T> = {
     data: response.data ?? null,
     error: response.error ?? null,
     status: response.status,
     raw: response.raw,
   }
+  if (response.count !== undefined) {
+    result.count = response.count
+  }
+  return result
 }
 
 function toSingleResult<Result>(response: SupabaseResult<Result>): SupabaseResult<MutationSingleResult<Result>> {
@@ -68,8 +77,8 @@ function toSingleResult<Result>(response: SupabaseResult<Result>): SupabaseResul
   }
 }
 
-function mergeOptions(...options: Array<AthenaGatewayCallOptions | undefined>): AthenaGatewayCallOptions | undefined {
-  return options.reduce<AthenaGatewayCallOptions | undefined>((acc, next) => {
+function mergeOptions<T extends object>(...options: Array<T | undefined>): T | undefined {
+  return options.reduce<T | undefined>((acc, next) => {
     if (!next) return acc
     return { ...acc, ...next }
   }, undefined)
@@ -160,6 +169,37 @@ export interface SelectChain<Row> extends FilterChain<SelectChain<Row>>, Promise
 
 /** Chain returned by update() - supports filters before execution, plus select/returning */
 export interface UpdateChain<Row> extends FilterChain<UpdateChain<Row>>, MutationQuery<Row[]> {}
+
+interface RpcFilterChain<Self> {
+  eq(column: string, value: AthenaConditionValue): Self
+  neq(column: string, value: AthenaConditionValue): Self
+  gt(column: string, value: AthenaConditionValue): Self
+  gte(column: string, value: AthenaConditionValue): Self
+  lt(column: string, value: AthenaConditionValue): Self
+  lte(column: string, value: AthenaConditionValue): Self
+  like(column: string, value: AthenaConditionValue): Self
+  ilike(column: string, value: AthenaConditionValue): Self
+  is(column: string, value: AthenaConditionValue): Self
+  in(column: string, values: AthenaConditionArrayValue): Self
+}
+
+export interface RpcOrderOptions {
+  ascending?: boolean
+}
+
+export interface RpcQueryBuilder<Row>
+  extends RpcFilterChain<RpcQueryBuilder<Row>>, PromiseLike<SupabaseResult<Row[]>> {
+  select(columns?: string | string[], options?: AthenaRpcCallOptions): Promise<SupabaseResult<Row[]>>
+  single<T = Row>(columns?: string | string[], options?: AthenaRpcCallOptions): Promise<SupabaseResult<T | null>>
+  maybeSingle<T = Row>(
+    columns?: string | string[],
+    options?: AthenaRpcCallOptions,
+  ): Promise<SupabaseResult<T | null>>
+  order(column: string, options?: RpcOrderOptions): RpcQueryBuilder<Row>
+  limit(count: number): RpcQueryBuilder<Row>
+  offset(count: number): RpcQueryBuilder<Row>
+  range(from: number, to: number): RpcQueryBuilder<Row>
+}
 
 export interface TableQueryBuilder<Row> extends FilterChain<TableQueryBuilder<Row>> {
   select<T = Row>(columns?: string | string[], options?: AthenaGatewayCallOptions): SelectChain<T>
@@ -290,6 +330,165 @@ function createFilterMethods<Self>(
       return self
     },
   }
+}
+
+function toRpcSelect(columns?: string | string[]) {
+  if (!columns) return undefined
+  return Array.isArray(columns) ? columns.join(',') : columns
+}
+
+function createRpcFilterMethods<Self>(
+  filters: AthenaRpcFilter[],
+  self: Self,
+) {
+  const addFilter = (
+    operator: AthenaRpcFilterOperator,
+    column: string,
+    value: AthenaConditionValue | AthenaConditionArrayValue | string,
+  ) => {
+    filters.push({ column, operator, value })
+  }
+
+  return {
+    eq(column: string, value: AthenaConditionValue) {
+      addFilter('eq', column, value)
+      return self
+    },
+    neq(column: string, value: AthenaConditionValue) {
+      addFilter('neq', column, value)
+      return self
+    },
+    gt(column: string, value: AthenaConditionValue) {
+      addFilter('gt', column, value)
+      return self
+    },
+    gte(column: string, value: AthenaConditionValue) {
+      addFilter('gte', column, value)
+      return self
+    },
+    lt(column: string, value: AthenaConditionValue) {
+      addFilter('lt', column, value)
+      return self
+    },
+    lte(column: string, value: AthenaConditionValue) {
+      addFilter('lte', column, value)
+      return self
+    },
+    like(column: string, value: AthenaConditionValue) {
+      addFilter('like', column, value)
+      return self
+    },
+    ilike(column: string, value: AthenaConditionValue) {
+      addFilter('ilike', column, value)
+      return self
+    },
+    is(column: string, value: AthenaConditionValue) {
+      addFilter('is', column, value)
+      return self
+    },
+    in(column: string, values: AthenaConditionArrayValue) {
+      addFilter('in', column, values)
+      return self
+    },
+  }
+}
+
+function createRpcBuilder<Row>(
+  functionName: string,
+  args: Record<string, unknown> | undefined,
+  baseOptions: AthenaRpcCallOptions | undefined,
+  client: ReturnType<typeof createAthenaGatewayClient>,
+): RpcQueryBuilder<Row> {
+  const state: {
+    filters: AthenaRpcFilter[]
+    limit?: number
+    offset?: number
+    order?: { column: string; ascending?: boolean }
+  } = {
+    filters: [],
+  }
+
+  let selectedColumns: string | string[] | undefined
+  let selectedOptions: AthenaRpcCallOptions | undefined
+  let promise: Promise<SupabaseResult<Row[]>> | null = null
+
+  const executeRpc = async <SelectedRow = Row>(
+    columns?: string | string[],
+    options?: AthenaRpcCallOptions,
+  ): Promise<SupabaseResult<SelectedRow[]>> => {
+    const mergedOptions = mergeOptions(baseOptions, options)
+    const payload: AthenaRpcPayload = {
+      function: functionName,
+      args,
+      schema: mergedOptions?.schema,
+      select: toRpcSelect(columns),
+      filters: state.filters.length ? [...state.filters] : undefined,
+      count: mergedOptions?.count,
+      limit: state.limit,
+      offset: state.offset,
+      order: state.order,
+    }
+    const response = await client.rpcGateway<SelectedRow[]>(payload, mergedOptions)
+    return formatResult(response)
+  }
+
+  const run = (columns?: string | string[], options?: AthenaRpcCallOptions) => {
+    const payloadColumns = columns ?? selectedColumns
+    const payloadOptions = options ?? selectedOptions
+    if (!promise) {
+      promise = executeRpc<Row>(payloadColumns, payloadOptions)
+    }
+    return promise
+  }
+
+  const builder = {} as RpcQueryBuilder<Row>
+  const filterMethods = createRpcFilterMethods(state.filters, builder)
+
+  Object.assign(builder, filterMethods, {
+    select(columns = selectedColumns, options?: AthenaRpcCallOptions) {
+      selectedColumns = columns
+      selectedOptions = options ?? selectedOptions
+      return run(columns, options)
+    },
+    async single<T = Row>(columns?: string | string[], options?: AthenaRpcCallOptions) {
+      const result = await run(columns, options)
+      return toSingleResult(result) as SupabaseResult<T | null>
+    },
+    maybeSingle<T = Row>(columns?: string | string[], options?: AthenaRpcCallOptions) {
+      return builder.single<T>(columns, options)
+    },
+    order(column: string, options?: RpcOrderOptions) {
+      state.order = { column, ascending: options?.ascending ?? true }
+      return builder
+    },
+    limit(count: number) {
+      state.limit = count
+      return builder
+    },
+    offset(count: number) {
+      state.offset = count
+      return builder
+    },
+    range(from: number, to: number) {
+      state.offset = from
+      state.limit = to - from + 1
+      return builder
+    },
+    then<T1 = SupabaseResult<Row[]>, T2 = never>(
+      onfulfilled?: (v: SupabaseResult<Row[]>) => T1 | PromiseLike<T1>,
+      onrejected?: (reason: unknown) => T2 | PromiseLike<T2>,
+    ) {
+      return run(selectedColumns, selectedOptions).then(onfulfilled, onrejected)
+    },
+    catch<T = never>(onrejected?: (reason: unknown) => T | PromiseLike<T>) {
+      return run(selectedColumns, selectedOptions).catch(onrejected)
+    },
+    finally(onfinally?: () => void) {
+      return run(selectedColumns, selectedOptions).finally(onfinally)
+    },
+  })
+
+  return builder
 }
 
 function createTableBuilder<Row>(
@@ -534,6 +733,11 @@ function createTableBuilder<Row>(
 
 export interface SupabaseClient {
   from<Row = unknown>(table: string): TableQueryBuilder<Row>
+  rpc<Row = unknown, Args extends Record<string, unknown> = Record<string, unknown>>(
+    fn: string,
+    args?: Args,
+    options?: AthenaRpcCallOptions,
+  ): RpcQueryBuilder<Row>
 }
 
 /** Client config for builder */
@@ -557,6 +761,22 @@ function createClientFromConfig(config: AthenaClientConfig): SupabaseClient {
   return {
     from<Row = unknown>(table: string) {
       return createTableBuilder<Row>(table, gateway)
+    },
+    rpc<Row = unknown, Args extends Record<string, unknown> = Record<string, unknown>>(
+      fn: string,
+      args?: Args,
+      options?: AthenaRpcCallOptions,
+    ) {
+      const normalizedFn = fn.trim()
+      if (!normalizedFn) {
+        throw new Error('rpc requires a function name')
+      }
+      return createRpcBuilder<Row>(
+        normalizedFn,
+        args as Record<string, unknown> | undefined,
+        options,
+        gateway,
+      )
     },
   }
 }

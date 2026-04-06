@@ -10,6 +10,7 @@ export type AthenaGatewayEndpointPath =
   | '/gateway/insert'
   | '/gateway/update'
   | '/gateway/delete'
+  | '/gateway/rpc'
 
 export type AthenaCountOption = 'exact' | 'planned' | 'estimated'
 
@@ -81,6 +82,42 @@ export interface AthenaUpdatePayload extends AthenaFetchPayload {
   update_body?: Record<string, unknown>
 }
 
+export type AthenaRpcFilterOperator =
+  | 'eq'
+  | 'neq'
+  | 'gt'
+  | 'gte'
+  | 'lt'
+  | 'lte'
+  | 'like'
+  | 'ilike'
+  | 'is'
+  | 'in'
+
+export interface AthenaRpcFilter {
+  column: string
+  operator: AthenaRpcFilterOperator
+  value?: AthenaConditionValue | AthenaConditionArrayValue | string
+}
+
+export interface AthenaRpcOrder {
+  column: string
+  ascending?: boolean
+}
+
+export interface AthenaRpcPayload {
+  function: string
+  function_name?: string
+  schema?: string
+  args?: Record<string, unknown>
+  select?: string
+  filters?: AthenaRpcFilter[]
+  count?: 'exact'
+  limit?: number
+  offset?: number
+  order?: AthenaRpcOrder
+}
+
 /** Backend type for Athena client (aligns with athena-rs) */
 export type BackendType = 'athena' | 'postgrest' | 'supabase' | 'postgresql' | 'scylladb'
 
@@ -122,10 +159,16 @@ export interface AthenaGatewayCallOptions extends AthenaGatewayBaseOptions {
   updateBody?: Record<string, unknown>
 }
 
+export interface AthenaRpcCallOptions extends AthenaGatewayCallOptions {
+  schema?: string
+  count?: 'exact'
+}
+
 export interface AthenaGatewayResponse<T = unknown> {
   ok: boolean
   status: number
   data: T | null
+  count?: number | null
   error?: string
   raw: unknown
 }
@@ -158,6 +201,10 @@ export interface AthenaGatewayHookResult {
   deleteGateway: <T = unknown>(
     payload: AthenaDeletePayload,
     options?: AthenaGatewayCallOptions,
+  ) => Promise<AthenaGatewayResponse<T>>
+  rpcGateway: <T = unknown>(
+    payload: AthenaRpcPayload,
+    options?: AthenaRpcCallOptions,
   ) => Promise<AthenaGatewayResponse<T>>
   isLoading: boolean
   error: string | null

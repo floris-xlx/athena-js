@@ -43,7 +43,7 @@ if (error) {
 }
 ```
 
-Every query resolves to `{ data, error, status, raw }`. `data` is `null` on error; `error` is `null` on success.
+Every query resolves to `{ data, error, status, count?, raw }`. `data` is `null` on error; `error` is `null` on success.
 
 ## Query builder
 
@@ -107,6 +107,25 @@ const { data: user } = await athena
 ```
 
 `maybeSingle` behaves identically — both return the first element of the result set.
+
+### RPC
+
+Use `athena.rpc(...)` for Postgres function calls through `POST /gateway/rpc`.
+
+```ts
+const { data, count } = await athena
+  .rpc("list_users", { role: "admin" }, { count: "exact", schema: "public" })
+  .eq("active", true)
+  .order("created_at", { ascending: false })
+  .range(0, 24)
+  .select(["id", "email"]);
+
+const { data: firstUser } = await athena
+  .rpc<{ id: number; email: string }>("list_users", { role: "admin" })
+  .single("id,email");
+```
+
+RPC chain methods: `.eq()`, `.neq()`, `.gt()`, `.gte()`, `.lt()`, `.lte()`, `.like()`, `.ilike()`, `.is()`, `.in()`, `.order()`, `.limit()`, `.offset()`, `.range()`, `.select()`, `.single()`, `.maybeSingle()`.
 
 ### Options
 
@@ -250,7 +269,7 @@ export function UsersPanel() {
 }
 ```
 
-The hook returns `fetchGateway`, `insertGateway`, `updateGateway`, `deleteGateway`, `isLoading`, `error`, `lastRequest`, `lastResponse`, and `baseUrl`.
+The hook returns `fetchGateway`, `insertGateway`, `updateGateway`, `deleteGateway`, `rpcGateway`, `isLoading`, `error`, `lastRequest`, `lastResponse`, and `baseUrl`.
 
 Hook config options mirror the client options: `baseUrl`, `apiKey`, `headers`, `userId`, `organizationId`, `publishEvent`.
 

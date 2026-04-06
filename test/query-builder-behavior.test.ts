@@ -432,3 +432,95 @@ test('like after match keeps both conditions', async () => {
     restore()
   }
 })
+
+test('rpc is awaitable and executes once', async () => {
+  const { calls, restore } = mockFetch()
+  try {
+    const rpc = client.rpc('list_characters', { active_only: true })
+    assert.equal(typeof rpc.then, 'function')
+    await rpc
+    await rpc
+    assert.equal(calls.length, 1)
+    const payload = JSON.parse(calls[0].init?.body as string)
+    assert.equal(payload.function, 'list_characters')
+    assert.deepEqual(payload.args, { active_only: true })
+  } finally {
+    restore()
+  }
+})
+
+test('rpc chain builds strict filters and selection payload', async () => {
+  const { calls, restore } = mockFetch()
+  try {
+    await client
+      .rpc('list_characters', { scope: 'all' })
+      .eq('role', 'mage')
+      .gt('level', 10)
+      .ilike('name', '%ar%')
+      .in('status', ['active', 'pending'])
+      .select(['id', 'name'])
+
+    const payload = JSON.parse(calls[0].init?.body as string)
+    assert.equal(payload.function, 'list_characters')
+    assert.equal(payload.select, 'id,name')
+    assert.deepEqual(payload.filters, [
+      { column: 'role', operator: 'eq', value: 'mage' },
+      { column: 'level', operator: 'gt', value: 10 },
+      { column: 'name', operator: 'ilike', value: '%ar%' },
+      { column: 'status', operator: 'in', value: ['active', 'pending'] },
+    ])
+  } finally {
+    restore()
+  }
+})
+
+test('rpc order, limit, and offset map to payload', async () => {
+  const { calls, restore } = mockFetch()
+  try {
+    await client
+      .rpc('list_characters')
+      .order('created_at', { ascending: false })
+      .range(10, 19)
+      .select('id')
+    const payload = JSON.parse(calls[0].init?.body as string)
+    assert.deepEqual(payload.order, { column: 'created_at', ascending: false })
+    assert.equal(payload.offset, 10)
+    assert.equal(payload.limit, 10)
+  } finally {
+    restore()
+  }
+})
+
+test('rpc count exact is sent and surfaced on result', async () => {
+  const original = globalThis.fetch
+  const calls: Captured[] = []
+  globalThis.fetch = async (url, init) => {
+    calls.push({ url: String(url), init })
+    return new Response(JSON.stringify({ data: [{ id: 1 }], count: 7 }), { status: 200 })
+  }
+  try {
+    const result = await client.rpc<{ id: number }>('list_characters', undefined, { count: 'exact' }).select('id')
+    const payload = JSON.parse(calls[0].init?.body as string)
+    assert.equal(payload.count, 'exact')
+    assert.equal(result.count, 7)
+    assert.deepEqual(result.data, [{ id: 1 }])
+  } finally {
+    globalThis.fetch = original
+  }
+})
+
+test('rpc single and maybeSingle return first row', async () => {
+  const original = globalThis.fetch
+  globalThis.fetch = async () =>
+    new Response(JSON.stringify({ data: [{ id: 1, name: 'Aragorn' }, { id: 2, name: 'Legolas' }] }), {
+      status: 200,
+    })
+  try {
+    const single = await client.rpc<{ id: number; name: string }>('list_characters').single('id,name')
+    const maybe = await client.rpc<{ id: number; name: string }>('list_characters').maybeSingle('id,name')
+    assert.deepEqual(single.data, { id: 1, name: 'Aragorn' })
+    assert.deepEqual(maybe.data, { id: 1, name: 'Aragorn' })
+  } finally {
+    globalThis.fetch = original
+  }
+})
