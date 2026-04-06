@@ -1,6 +1,6 @@
 import { strict as assert } from 'assert'
 import { test } from 'node:test'
-import { createClient, AthenaClient } from '../src/supabase.ts'
+import { createClient, AthenaClient } from '../src/client.ts'
 
 function createMockResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status })

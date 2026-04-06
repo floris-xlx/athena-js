@@ -119,7 +119,7 @@ export interface AthenaRpcPayload {
 }
 
 /** Backend type for Athena client (aligns with athena-rs) */
-export type BackendType = 'athena' | 'postgrest' | 'supabase' | 'postgresql' | 'scylladb'
+export type BackendType = 'athena' | 'postgrest' | 'postgresql' | 'scylladb'
 
 /** Backend config: type from SDK + backend-scoped options */
 export interface BackendConfig {
@@ -130,7 +130,6 @@ export interface BackendConfig {
 /** Pre-defined backends for lean usage: backend: Backend.Athena */
 export const Backend = {
   Athena: { type: 'athena' } as const,
-  Supabase: { type: 'supabase' } as const,
   Postgrest: { type: 'postgrest' } as const,
   PostgreSQL: { type: 'postgresql' } as const,
   ScyllaDB: { type: 'scylladb' } as const,

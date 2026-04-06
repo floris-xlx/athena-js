@@ -45,9 +45,9 @@ test('buildHeaders forwards publish event', () => {
 })
 
 test('buildHeaders sets backend type', () => {
-  const client = createAthenaGatewayClient({ backend: { type: 'supabase' } })
+  const client = createAthenaGatewayClient({ backend: { type: 'postgresql' } })
   const headers = client.buildHeaders()
-  assert.equal(headers['X-Backend-Type'], 'supabase')
+  assert.equal(headers['X-Backend-Type'], 'postgresql')
 })
 
 test('buildHeaders accepts stripNulls override', () => {

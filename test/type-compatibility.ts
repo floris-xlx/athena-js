@@ -1,4 +1,4 @@
-import { createClient, type SupabaseResult } from "../src/index.ts"
+import { createClient, type AthenaResult } from "../src/index.ts"
 
 interface UserRow {
   id: string
@@ -6,23 +6,23 @@ interface UserRow {
   email?: string | null
 }
 
-declare function acceptsUserPromise(value: Promise<SupabaseResult<UserRow>>): void
-declare function acceptsUserArrayPromise(value: Promise<SupabaseResult<UserRow[]>>): void
+declare function acceptsUserPromise(value: Promise<AthenaResult<UserRow>>): void
+declare function acceptsUserArrayPromise(value: Promise<AthenaResult<UserRow[]>>): void
 declare function acceptsUserArrayWithCountPromise(
-  value: Promise<SupabaseResult<UserRow[]>>,
+  value: Promise<AthenaResult<UserRow[]>>,
 ): void
 declare function acceptsCountValue(value: number | null | undefined): void
 
-declare function acceptsMaybeUserPromise(value: Promise<SupabaseResult<UserRow | null>>): void
+declare function acceptsMaybeUserPromise(value: Promise<AthenaResult<UserRow | null>>): void
 declare function acceptsMaybeUserPickPromise(
-  value: Promise<SupabaseResult<Pick<UserRow, "id"> | null>>,
+  value: Promise<AthenaResult<Pick<UserRow, "id"> | null>>,
 ): void
 
 declare function acceptsUserInsertMutation(
-  value: PromiseLike<SupabaseResult<UserRow>>,
+  value: PromiseLike<AthenaResult<UserRow>>,
 ): void
 declare function acceptsUserArrayInsertMutation(
-  value: PromiseLike<SupabaseResult<UserRow[]>>,
+  value: PromiseLike<AthenaResult<UserRow[]>>,
 ): void
 
 const client = createClient("https://athena-db.com", "api-key")
@@ -77,5 +77,5 @@ client.rpc<UserRow>('list_users', {}, { count: 'planned' })
 client.rpc<UserRow>('list_users').in('id', 'not-an-array')
 
 declare function acceptsUserPickArrayPromise(
-  value: PromiseLike<SupabaseResult<Array<Pick<UserRow, "id">>>>,
+  value: PromiseLike<AthenaResult<Array<Pick<UserRow, "id">>>>,
 ): void

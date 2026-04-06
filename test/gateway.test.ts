@@ -15,7 +15,7 @@ import type {
   AthenaGatewayHookConfig,
   AthenaGatewayCallOptions,
 } from '../src/gateway/types.ts'
-import { createClient } from '../src/supabase.ts'
+import { createClient } from '../src/client.ts'
 
 // test type contracts by constructing payloads and verifying shape
 

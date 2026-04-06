@@ -16,7 +16,7 @@ import type {
 import type { BackendConfig, BackendType } from './gateway/types.ts'
 import { createAthenaGatewayClient } from './gateway/client.ts'
 
-export interface SupabaseResult<T> {
+export interface AthenaResult<T> {
   data: T | null
   error: string | null
   status: number
@@ -33,29 +33,29 @@ type TableBuilderState = {
 type MutationSingleResult<Result> = Result extends Array<infer Item> ? Item | null : Result | null
 const DEFAULT_COLUMNS = '*'
 
-export interface MutationQuery<Result> extends PromiseLike<SupabaseResult<Result>> {
-  select(columns?: string | string[], options?: AthenaGatewayCallOptions): Promise<SupabaseResult<Result>>
-  returning(columns?: string | string[], options?: AthenaGatewayCallOptions): Promise<SupabaseResult<Result>>
+export interface MutationQuery<Result> extends PromiseLike<AthenaResult<Result>> {
+  select(columns?: string | string[], options?: AthenaGatewayCallOptions): Promise<AthenaResult<Result>>
+  returning(columns?: string | string[], options?: AthenaGatewayCallOptions): Promise<AthenaResult<Result>>
   single(
     columns?: string | string[],
     options?: AthenaGatewayCallOptions,
-  ): Promise<SupabaseResult<MutationSingleResult<Result>>>
+  ): Promise<AthenaResult<MutationSingleResult<Result>>>
   maybeSingle(
     columns?: string | string[],
     options?: AthenaGatewayCallOptions,
-  ): Promise<SupabaseResult<MutationSingleResult<Result>>>
-  then<TResult1 = SupabaseResult<Result>, TResult2 = never>(
-    onfulfilled?: ((value: SupabaseResult<Result>) => TResult1 | PromiseLike<TResult1>) | undefined | null,
+  ): Promise<AthenaResult<MutationSingleResult<Result>>>
+  then<TResult1 = AthenaResult<Result>, TResult2 = never>(
+    onfulfilled?: ((value: AthenaResult<Result>) => TResult1 | PromiseLike<TResult1>) | undefined | null,
     onrejected?: ((reason: unknown) => TResult2 | PromiseLike<TResult2>) | undefined | null,
   ): Promise<TResult1 | TResult2>
   catch<TResult = never>(
     onrejected?: ((reason: unknown) => TResult | PromiseLike<TResult>) | undefined | null,
-  ): Promise<SupabaseResult<Result> | TResult>
-  finally(onfinally?: (() => void) | undefined | null): Promise<SupabaseResult<Result>>
+  ): Promise<AthenaResult<Result> | TResult>
+  finally(onfinally?: (() => void) | undefined | null): Promise<AthenaResult<Result>>
 }
 
-function formatResult<T>(response: AthenaGatewayResponse<T>): SupabaseResult<T> {
-  const result: SupabaseResult<T> = {
+function formatResult<T>(response: AthenaGatewayResponse<T>): AthenaResult<T> {
+  const result: AthenaResult<T> = {
     data: response.data ?? null,
     error: response.error ?? null,
     status: response.status,
@@ -67,7 +67,7 @@ function formatResult<T>(response: AthenaGatewayResponse<T>): SupabaseResult<T> 
   return result
 }
 
-function toSingleResult<Result>(response: SupabaseResult<Result>): SupabaseResult<MutationSingleResult<Result>> {
+function toSingleResult<Result>(response: AthenaResult<Result>): AthenaResult<MutationSingleResult<Result>> {
   const payload = response.data
   const singleData =
     Array.isArray(payload) ? (payload.length ? payload[0] : null) : payload ?? null
@@ -88,12 +88,12 @@ function createMutationQuery<Result>(
   executor: (
     columns?: string | string[],
     options?: AthenaGatewayCallOptions,
-  ) => Promise<SupabaseResult<Result>>,
+  ) => Promise<AthenaResult<Result>>,
   defaultColumns: string | string[] = DEFAULT_COLUMNS,
 ): MutationQuery<Result> {
   let selectedColumns: string | string[] = defaultColumns
   let selectedOptions: AthenaGatewayCallOptions | undefined
-  let promise: Promise<SupabaseResult<Result>> | null = null
+  let promise: Promise<AthenaResult<Result>> | null = null
 
   const run = (columns?: string | string[], options?: AthenaGatewayCallOptions) => {
     const payloadColumns = columns ?? selectedColumns
@@ -162,9 +162,9 @@ interface FilterChain<Self> {
 }
 
 /** Chain returned by select() - supports filters and single/maybeSingle before execution */
-export interface SelectChain<Row> extends FilterChain<SelectChain<Row>>, PromiseLike<SupabaseResult<Row[]>> {
-  single<T = Row>(columns?: string | string[], options?: AthenaGatewayCallOptions): Promise<SupabaseResult<T | null>>
-  maybeSingle<T = Row>(columns?: string | string[], options?: AthenaGatewayCallOptions): Promise<SupabaseResult<T | null>>
+export interface SelectChain<Row> extends FilterChain<SelectChain<Row>>, PromiseLike<AthenaResult<Row[]>> {
+  single<T = Row>(columns?: string | string[], options?: AthenaGatewayCallOptions): Promise<AthenaResult<T | null>>
+  maybeSingle<T = Row>(columns?: string | string[], options?: AthenaGatewayCallOptions): Promise<AthenaResult<T | null>>
 }
 
 /** Chain returned by update() - supports filters before execution, plus select/returning */
@@ -188,13 +188,13 @@ export interface RpcOrderOptions {
 }
 
 export interface RpcQueryBuilder<Row>
-  extends RpcFilterChain<RpcQueryBuilder<Row>>, PromiseLike<SupabaseResult<Row[]>> {
-  select(columns?: string | string[], options?: AthenaRpcCallOptions): Promise<SupabaseResult<Row[]>>
-  single<T = Row>(columns?: string | string[], options?: AthenaRpcCallOptions): Promise<SupabaseResult<T | null>>
+  extends RpcFilterChain<RpcQueryBuilder<Row>>, PromiseLike<AthenaResult<Row[]>> {
+  select(columns?: string | string[], options?: AthenaRpcCallOptions): Promise<AthenaResult<Row[]>>
+  single<T = Row>(columns?: string | string[], options?: AthenaRpcCallOptions): Promise<AthenaResult<T | null>>
   maybeSingle<T = Row>(
     columns?: string | string[],
     options?: AthenaRpcCallOptions,
-  ): Promise<SupabaseResult<T | null>>
+  ): Promise<AthenaResult<T | null>>
   order(column: string, options?: RpcOrderOptions): RpcQueryBuilder<Row>
   limit(count: number): RpcQueryBuilder<Row>
   offset(count: number): RpcQueryBuilder<Row>
@@ -221,8 +221,8 @@ export interface TableQueryBuilder<Row> extends FilterChain<TableQueryBuilder<Ro
   ): MutationQuery<Row[]>
   update(values: Partial<Row>, options?: AthenaGatewayCallOptions): UpdateChain<Row>
   delete(options?: AthenaGatewayCallOptions & { resourceId?: string }): MutationQuery<Row | null>
-  single<T = Row>(columns?: string | string[], options?: AthenaGatewayCallOptions): Promise<SupabaseResult<T | null>>
-  maybeSingle<T = Row>(columns?: string | string[], options?: AthenaGatewayCallOptions): Promise<SupabaseResult<T | null>>
+  single<T = Row>(columns?: string | string[], options?: AthenaGatewayCallOptions): Promise<AthenaResult<T | null>>
+  maybeSingle<T = Row>(columns?: string | string[], options?: AthenaGatewayCallOptions): Promise<AthenaResult<T | null>>
   reset(): TableQueryBuilder<Row>
 }
 
@@ -410,12 +410,12 @@ function createRpcBuilder<Row>(
 
   let selectedColumns: string | string[] | undefined
   let selectedOptions: AthenaRpcCallOptions | undefined
-  let promise: Promise<SupabaseResult<Row[]>> | null = null
+  let promise: Promise<AthenaResult<Row[]>> | null = null
 
   const executeRpc = async <SelectedRow = Row>(
     columns?: string | string[],
     options?: AthenaRpcCallOptions,
-  ): Promise<SupabaseResult<SelectedRow[]>> => {
+  ): Promise<AthenaResult<SelectedRow[]>> => {
     const mergedOptions = mergeOptions(baseOptions, options)
     const payload: AthenaRpcPayload = {
       function: functionName,
@@ -452,7 +452,7 @@ function createRpcBuilder<Row>(
     },
     async single<T = Row>(columns?: string | string[], options?: AthenaRpcCallOptions) {
       const result = await run(columns, options)
-      return toSingleResult(result) as SupabaseResult<T | null>
+      return toSingleResult(result) as AthenaResult<T | null>
     },
     maybeSingle<T = Row>(columns?: string | string[], options?: AthenaRpcCallOptions) {
       return builder.single<T>(columns, options)
@@ -474,8 +474,8 @@ function createRpcBuilder<Row>(
       state.limit = to - from + 1
       return builder
     },
-    then<T1 = SupabaseResult<Row[]>, T2 = never>(
-      onfulfilled?: (v: SupabaseResult<Row[]>) => T1 | PromiseLike<T1>,
+    then<T1 = AthenaResult<Row[]>, T2 = never>(
+      onfulfilled?: (v: AthenaResult<Row[]>) => T1 | PromiseLike<T1>,
       onrejected?: (reason: unknown) => T2 | PromiseLike<T2>,
     ) {
       return run(selectedColumns, selectedOptions).then(onfulfilled, onrejected)
@@ -557,8 +557,8 @@ function createTableBuilder<Row>(
       maybeSingle<T = SelectedRow>(cols?: string | string[], opts?: AthenaGatewayCallOptions) {
         return chain.single<T>(cols, opts)
       },
-      then<T1 = SupabaseResult<SelectedRow[]>, T2 = never>(
-        onfulfilled?: (v: SupabaseResult<SelectedRow[]>) => T1 | PromiseLike<T1>,
+      then<T1 = AthenaResult<SelectedRow[]>, T2 = never>(
+        onfulfilled?: (v: AthenaResult<SelectedRow[]>) => T1 | PromiseLike<T1>,
         onrejected?: (reason: unknown) => T2 | PromiseLike<T2>,
       ) {
         return runSelect<SelectedRow[]>(columns, options).then(onfulfilled, onrejected)
@@ -731,7 +731,7 @@ function createTableBuilder<Row>(
   return builder
 }
 
-export interface SupabaseClient {
+export interface AthenaSdkClient {
   from<Row = unknown>(table: string): TableQueryBuilder<Row>
   rpc<Row = unknown, Args extends Record<string, unknown> = Record<string, unknown>>(
     fn: string,
@@ -750,7 +750,7 @@ export interface AthenaClientConfig {
   healthTracking?: boolean
 }
 
-function createClientFromConfig(config: AthenaClientConfig): SupabaseClient {
+function createClientFromConfig(config: AthenaClientConfig): AthenaSdkClient {
   const gateway = createAthenaGatewayClient({
     baseUrl: config.baseUrl,
     apiKey: config.apiKey,
@@ -782,13 +782,20 @@ function createClientFromConfig(config: AthenaClientConfig): SupabaseClient {
 }
 
 export interface AthenaClientBuilder {
+  /** Set the gateway base URL. */
   url(url: string): AthenaClientBuilder
+  /** Set the API key used for all requests. */
   key(apiKey: string): AthenaClientBuilder
+  /** Set the default backend routing strategy. */
   backend(backend: BackendConfig | BackendType): AthenaClientBuilder
+  /** Set the default Athena client routing key. */
   client(clientName: string): AthenaClientBuilder
+  /** Attach static headers to every request. */
   headers(headers: Record<string, string>): AthenaClientBuilder
+  /** Enable or disable health tracking metadata. */
   healthTracking(enabled: boolean): AthenaClientBuilder
-  build(): SupabaseClient
+  /** Build the immutable Athena SDK client. */
+  build(): AthenaSdkClient
 }
 
 const DEFAULT_BACKEND: BackendConfig = { type: 'athena' }
@@ -798,75 +805,87 @@ function toBackendConfig(b: BackendConfig | BackendType | undefined): BackendCon
   return typeof b === 'string' ? { type: b } : b
 }
 
-export const AthenaClient = {
-  builder(): AthenaClientBuilder {
-    let url: string | undefined
-    let key: string | undefined
-    let backend: BackendConfig = DEFAULT_BACKEND
-    let clientName: string | undefined
-    let headers: Record<string, string> | undefined
-    let healthTracking = false
-    const builder = {
-      url(u: string) {
-        url = u
-        return builder
-      },
-      key(k: string) {
-        key = k
-        return builder
-      },
-      backend(b: BackendConfig | BackendType) {
-        backend = toBackendConfig(b)
-        return builder
-      },
-      client(c: string) {
-        clientName = c
-        return builder
-      },
-      headers(h: Record<string, string>) {
-        headers = h
-        return builder
-      },
-      healthTracking(enabled: boolean) {
-        healthTracking = enabled
-        return builder
-      },
-      build(): SupabaseClient {
-        if (!url || !key) {
-          throw new Error('AthenaClient requires url and key; call .url() and .key() before .build()')
-        }
-        return createClientFromConfig({
-          baseUrl: url,
-          apiKey: key,
-          client: clientName,
-          backend,
-          headers,
-          healthTracking,
-        })
-      },
-    }
-    return builder
-  },
+class AthenaClientBuilderImpl implements AthenaClientBuilder {
+  private baseUrl?: string
+  private apiKey?: string
+  private backendConfig: BackendConfig = DEFAULT_BACKEND
+  private clientName?: string
+  private defaultHeaders?: Record<string, string>
+  private isHealthTrackingEnabled = false
 
-  /** Build client from env: ATHENA_SUPABASE_URL, ATHENA_SUPABASE_KEY (or SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY) */
-  fromSupabaseEnv(): SupabaseClient {
+  url(url: string): AthenaClientBuilder {
+    this.baseUrl = url
+    return this
+  }
+
+  key(apiKey: string): AthenaClientBuilder {
+    this.apiKey = apiKey
+    return this
+  }
+
+  backend(backend: BackendConfig | BackendType): AthenaClientBuilder {
+    this.backendConfig = toBackendConfig(backend)
+    return this
+  }
+
+  client(clientName: string): AthenaClientBuilder {
+    this.clientName = clientName
+    return this
+  }
+
+  headers(headers: Record<string, string>): AthenaClientBuilder {
+    this.defaultHeaders = headers
+    return this
+  }
+
+  healthTracking(enabled: boolean): AthenaClientBuilder {
+    this.isHealthTrackingEnabled = enabled
+    return this
+  }
+
+  build(): AthenaSdkClient {
+    if (!this.baseUrl || !this.apiKey) {
+      throw new Error('AthenaClient requires url and key; call .url() and .key() before .build()')
+    }
+
+    return createClientFromConfig({
+      baseUrl: this.baseUrl,
+      apiKey: this.apiKey,
+      client: this.clientName,
+      backend: this.backendConfig,
+      headers: this.defaultHeaders,
+      healthTracking: this.isHealthTrackingEnabled,
+    })
+  }
+}
+
+/** Canonical Athena client factory with builder-based configuration. */
+export class AthenaClient {
+  /** Create a fluent builder for a strongly-typed Athena SDK client. */
+  static builder(): AthenaClientBuilder {
+    return new AthenaClientBuilderImpl()
+  }
+
+  /** Build a client from process environment variables. */
+  static fromEnvironment(): AthenaSdkClient {
     const url =
-      process.env.ATHENA_SUPABASE_URL ??
-      process.env.SUPABASE_URL
+      process.env.ATHENA_URL ??
+      process.env.ATHENA_GATEWAY_URL
     const key =
-      process.env.ATHENA_SUPABASE_KEY ??
-      process.env.SUPABASE_SERVICE_ROLE_KEY
+      process.env.ATHENA_API_KEY ??
+      process.env.ATHENA_GATEWAY_API_KEY
+
     if (!url || !key) {
       throw new Error(
-        'ATHENA_SUPABASE_URL and ATHENA_SUPABASE_KEY (or SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY) are required',
+        'ATHENA_URL and ATHENA_API_KEY (or ATHENA_GATEWAY_URL and ATHENA_GATEWAY_API_KEY) are required',
       )
     }
+
     return AthenaClient.builder()
-      .backend({ type: 'supabase' })
       .url(url)
       .key(key)
       .build()
-  },
+  }
 }
 
 /** Create client (convenience wrapper; use AthenaClient.builder() for full control) */
@@ -874,7 +893,7 @@ export function createClient(
   url: string,
   apiKey: string,
   options?: Pick<AthenaGatewayCallOptions, 'client' | 'headers' | 'backend'>,
-): SupabaseClient {
+): AthenaSdkClient {
   const b = AthenaClient.builder().url(url).key(apiKey).backend(toBackendConfig(options?.backend))
   if (options?.client) b.client(options.client)
   if (options?.headers && Object.keys(options.headers).length > 0) b.headers(options.headers)

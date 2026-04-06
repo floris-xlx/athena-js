@@ -11,10 +11,10 @@ const athena = createClient(
   url: string,
   apiKey: string,
   options?: { client?: string; headers?: Record<string, string>; backend?: BackendConfig }
-): SupabaseClient
+): AthenaSdkClient
 ```
 
-Creates and returns a `SupabaseClient` bound to the given URL and API key. All requests use `url` as the base URL and send `apiKey` as the `apikey` and `x-api-key` headers.
+Creates and returns an `AthenaSdkClient` bound to the given URL and API key. All requests use `url` as the base URL and send `apiKey` as the `apikey` and `x-api-key` headers.
 
 **Parameters**
 
@@ -24,14 +24,14 @@ Creates and returns a `SupabaseClient` bound to the given URL and API key. All r
 | `apiKey` | `string` | API key sent with every request |
 | `options` | `{ client?, headers?, backend? }` | Optional: `client`, `headers`, `backend` (object with `type: BackendType` and `options?`) |
 
-**Returns** `SupabaseClient`
+**Returns** `AthenaSdkClient`
 
 ---
 
-## SupabaseClient
+## AthenaSdkClient
 
 ```ts
-interface SupabaseClient {
+interface AthenaSdkClient {
   from<Row = unknown>(table: string): TableQueryBuilder<Row>
   rpc<Row = unknown, Args extends Record<string, unknown> = Record<string, unknown>>(
     fn: string,
@@ -97,7 +97,7 @@ const { data } = await athena.from("users").select(["id", "name"]);
 ### .single
 
 ```ts
-.single<T = Row>(columns?: string | string[], options?: AthenaGatewayCallOptions): Promise<SupabaseResult<T | null>>
+.single<T = Row>(columns?: string | string[], options?: AthenaGatewayCallOptions): Promise<AthenaResult<T | null>>
 ```
 
 Executes `.select()` and returns `data` as a single object (the first element of the result array) instead of an array. Returns `null` when there are no results.
@@ -215,11 +215,11 @@ All filter methods return `TableQueryBuilder<Row>` for chaining.
 `insert`, `update`, `upsert`, and `delete` all return a `MutationQuery`. It is a thenable — you can `await` it, `.then()` it, or chain one of the methods below. The HTTP request fires exactly once.
 
 ```ts
-interface MutationQuery<Result> extends PromiseLike<SupabaseResult<Result>> {
-  select(columns?, options?): Promise<SupabaseResult<Result>>
-  returning(columns?, options?): Promise<SupabaseResult<Result>>
-  single(columns?, options?): Promise<SupabaseResult<MutationSingleResult<Result>>>
-  maybeSingle(columns?, options?): Promise<SupabaseResult<MutationSingleResult<Result>>>
+interface MutationQuery<Result> extends PromiseLike<AthenaResult<Result>> {
+  select(columns?, options?): Promise<AthenaResult<Result>>
+  returning(columns?, options?): Promise<AthenaResult<Result>>
+  single(columns?, options?): Promise<AthenaResult<MutationSingleResult<Result>>>
+  maybeSingle(columns?, options?): Promise<AthenaResult<MutationSingleResult<Result>>>
   then(onfulfilled?, onrejected?): Promise<…>
   catch(onrejected?): Promise<…>
   finally(onfinally?): Promise<…>
@@ -240,7 +240,7 @@ interface MutationQuery<Result> extends PromiseLike<SupabaseResult<Result>> {
 Returned by `athena.rpc(...)`. It is awaitable and executes exactly once.
 
 ```ts
-interface RpcQueryBuilder<Row> extends PromiseLike<SupabaseResult<Row[]>> {
+interface RpcQueryBuilder<Row> extends PromiseLike<AthenaResult<Row[]>> {
   eq(column, value): RpcQueryBuilder<Row>
   neq(column, value): RpcQueryBuilder<Row>
   gt(column, value): RpcQueryBuilder<Row>
@@ -255,9 +255,9 @@ interface RpcQueryBuilder<Row> extends PromiseLike<SupabaseResult<Row[]>> {
   limit(count): RpcQueryBuilder<Row>
   offset(count): RpcQueryBuilder<Row>
   range(from, to): RpcQueryBuilder<Row>
-  select(columns?: string | string[], options?: AthenaRpcCallOptions): Promise<SupabaseResult<Row[]>>
-  single(columns?: string | string[], options?: AthenaRpcCallOptions): Promise<SupabaseResult<Row | null>>
-  maybeSingle(columns?: string | string[], options?: AthenaRpcCallOptions): Promise<SupabaseResult<Row | null>>
+  select(columns?: string | string[], options?: AthenaRpcCallOptions): Promise<AthenaResult<Row[]>>
+  single(columns?: string | string[], options?: AthenaRpcCallOptions): Promise<AthenaResult<Row | null>>
+  maybeSingle(columns?: string | string[], options?: AthenaRpcCallOptions): Promise<AthenaResult<Row | null>>
 }
 ```
 
@@ -276,12 +276,12 @@ pnpm check:all  # lint + typecheck + test + build
 
 ---
 
-## SupabaseResult
+## AthenaResult
 
 Every query and mutation resolves to:
 
 ```ts
-interface SupabaseResult<T> {
+interface AthenaResult<T> {
   data: T | null      // response payload, null on error
   error: string | null // error message, null on success
   status: number       // HTTP status code
@@ -307,7 +307,7 @@ React hook that wraps the Athena gateway client with React state for loading, er
 | Option | Type | Description |
 |--------|------|-------------|
 | `baseUrl` | `string` | Gateway server URL |
-| `apiKey` | `string` | API key (or service-role key for Supabase backend) |
+| `apiKey` | `string` | API key for Athena gateway authentication |
 | `headers` | `Record<string, string>` | Extra headers added to every request |
 | `userId` | `string \| null` | Sent as `X-User-Id` |
 | `organizationId` | `string \| null` | Sent as `X-Organization-Id` |

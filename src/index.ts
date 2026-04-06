@@ -6,15 +6,15 @@
  */
 
 // Athena client
-export { createClient, AthenaClient } from "./supabase.js";
+export { createClient, AthenaClient } from "./client.js";
 export { Backend } from "./gateway/types.js";
 export type {
   RpcQueryBuilder,
   RpcOrderOptions,
-  SupabaseClient,
+  AthenaSdkClient,
   TableQueryBuilder,
-  SupabaseResult,
-} from "./supabase.js";
+  AthenaResult,
+} from "./client.js";
 export type {
   AthenaRpcCallOptions,
   AthenaRpcFilter,

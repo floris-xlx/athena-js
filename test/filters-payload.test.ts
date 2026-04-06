@@ -1,6 +1,6 @@
 import { strict as assert } from 'assert'
 import { test } from 'node:test'
-import { createClient } from '../src/supabase.ts'
+import { createClient } from '../src/client.ts'
 
 type Captured = { url: string; init?: RequestInit }
 

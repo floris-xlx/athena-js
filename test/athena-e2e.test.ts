@@ -1,7 +1,7 @@
 import { strict as assert } from 'assert'
 import { test } from 'node:test'
 import crypto from 'crypto'
-import { createClient } from '../src/supabase.ts'
+import { createClient } from '../src/client.ts'
 
 const ATHENA_URL = process.env.ATHENA_URL ?? 'https://mirror3.athena-db.com'
 const ATHENA_API_KEY = process.env.ATHENA_API_KEY ?? 'x'

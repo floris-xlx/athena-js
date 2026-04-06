@@ -162,8 +162,8 @@ const { data } = await athena
   .select();
 
 // Type inference differs by payload shape:
-// - insert(one) => SupabaseResult<Row>
-// - insert(many) => SupabaseResult<Row[]>
+// - insert(one) => AthenaResult<Row>
+// - insert(many) => AthenaResult<Row[]>
 ```
 
 ### Update
@@ -190,8 +190,8 @@ const { data } = await athena
   .select();
 
 // Type inference differs by payload shape:
-// - upsert(one) => SupabaseResult<Row>
-// - upsert(many) => SupabaseResult<Row[]>
+// - upsert(one) => AthenaResult<Row>
+// - upsert(many) => AthenaResult<Row[]>
 ```
 
 | Option | Type | Description |
@@ -286,7 +286,7 @@ const athena = createClient("https://athena-db.com", process.env.ATHENA_API_KEY,
 });
 ```
 
-Or pass per-call via options. The Athena server interprets `url` and `key` based on the backend type (Supabase, PostgREST, etc.).
+Or pass per-call via options. The Athena server interprets `url` and `key` based on the configured backend type.
 
 ## Custom headers
 

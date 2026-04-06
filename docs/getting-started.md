@@ -191,8 +191,8 @@ await athena
   )
   .select("id, name");
 
-// upsert(one) resolves as SupabaseResult<User>
-// upsert(many) resolves as SupabaseResult<User[]>
+// upsert(one) resolves as AthenaResult<User>
+// upsert(many) resolves as AthenaResult<User[]>
 ```
 
 `updateBody` specifies which fields to update on conflict. `onConflict` names the unique key column(s).
