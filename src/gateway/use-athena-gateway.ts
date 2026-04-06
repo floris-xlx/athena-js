@@ -16,6 +16,7 @@ import type {
   AthenaUpdatePayload,
 } from "./types.js";
 import { createAthenaGatewayClient } from "./client.js";
+import { AthenaGatewayError } from "./errors.ts";
 
 export function useAthenaGateway(
   config?: AthenaGatewayHookConfig,
@@ -80,27 +81,39 @@ export function useAthenaGateway(
         setLastResponse({ ...response, timestamp: new Date().toISOString() });
 
         if (!response.ok) {
-          const message =
-            response.error ||
-            `Athena gateway ${metadata.method} ${metadata.endpoint} failed`;
-          setError(message);
-          throw new Error(message);
+          const failure = AthenaGatewayError.fromResponse(response, {
+            endpoint: metadata.endpoint as AthenaGatewayEndpointPath,
+            method: metadata.method as AthenaGatewayMethod,
+          });
+          setError(failure.message);
+          throw failure;
         }
 
         return response;
       } catch (callError) {
         const message =
           callError instanceof Error ? callError.message : String(callError);
+        const typedError =
+          callError instanceof AthenaGatewayError
+            ? callError
+            : new AthenaGatewayError({
+                code: "UNKNOWN_ERROR",
+                message,
+                endpoint: metadata.endpoint as AthenaGatewayEndpointPath,
+                method: metadata.method as AthenaGatewayMethod,
+                cause: message,
+              });
         setError(message);
         setLastResponse({
           timestamp: new Date().toISOString(),
-          status: response?.status ?? 0,
+          status: typedError.status || response?.status || 0,
           ok: false,
           data: null,
           raw: null,
-          error: message,
+          error: typedError.message,
+          errorDetails: typedError.toDetails(),
         });
-        throw callError;
+        throw typedError;
       } finally {
         setIsLoading(false);
       }

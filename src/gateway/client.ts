@@ -2,6 +2,7 @@ import type {
   AthenaGatewayBaseOptions,
   AthenaGatewayCallOptions,
   AthenaGatewayEndpointPath,
+  AthenaGatewayErrorDetails,
   AthenaGatewayMethod,
   AthenaRpcCallOptions,
   AthenaRpcPayload,
@@ -13,21 +14,68 @@ import type {
   AthenaInsertPayload,
   AthenaUpdatePayload,
 } from "./types.js";
+import { AthenaGatewayError } from "./errors.ts";
 
 const DEFAULT_BASE_URL = "https://athena-db.com";
 const DEFAULT_CLIENT = "railway_direct";
 
-function parseResponseText(text: string) {
-  if (!text) return null;
+function parseResponseBody(rawText: string, contentType: string | null) {
+  if (!rawText) {
+    return { parsed: null as unknown, parseFailed: false };
+  }
+
+  const contentTypeSuggestsJson =
+    contentType?.toLowerCase().includes("application/json") ?? false;
+  const looksJson =
+    contentTypeSuggestsJson || rawText.startsWith("{") || rawText.startsWith("[");
+
+  if (!looksJson) {
+    return { parsed: rawText as unknown, parseFailed: false };
+  }
+
   try {
-    return JSON.parse(text);
+    return { parsed: JSON.parse(rawText) as unknown, parseFailed: false };
   } catch {
-    return text;
+    return { parsed: rawText as unknown, parseFailed: true };
   }
 }
 
 function normalizeHeaderValue(value?: string | null) {
   return value ? value : undefined;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function resolveRequestId(headers: Headers): string | undefined {
+  return (
+    headers.get("x-request-id") ??
+    headers.get("x-correlation-id") ??
+    headers.get("x-athena-request-id") ??
+    undefined
+  );
+}
+
+function resolveErrorMessage(payload: unknown, fallback: string) {
+  if (isRecord(payload)) {
+    const messageCandidates = [payload.error, payload.message, payload.details];
+    for (const candidate of messageCandidates) {
+      if (typeof candidate === "string" && candidate.trim().length > 0) {
+        return candidate.trim();
+      }
+    }
+  }
+
+  if (typeof payload === "string" && payload.trim().length > 0) {
+    return payload.trim();
+  }
+
+  return fallback;
+}
+
+function detailsFromError(error: AthenaGatewayError): AthenaGatewayErrorDetails {
+  return error.toDetails();
 }
 
 function buildHeaders(
@@ -121,53 +169,97 @@ async function callAthena<T>(
     });
 
     const rawText = await response.text();
-    const parsed = parseResponseText(rawText ?? "");
-    const parsedPayload = parsed as Record<string, unknown> | null;
-    const parsedError =
-      parsedPayload && typeof parsedPayload === "object"
-        ? ((parsedPayload.error as string | undefined) ??
-          (parsedPayload.message as string | undefined))
-        : undefined;
-    const hasError =
-      !response.ok &&
-      typeof parsedError === "string" &&
-      parsedError.length > 0
-        ? parsedError
-        : undefined;
+    const requestId = resolveRequestId(response.headers);
+    const parsedBody = parseResponseBody(
+      rawText ?? "",
+      response.headers.get("content-type"),
+    );
+
+    if (parsedBody.parseFailed) {
+      const invalidJsonError = new AthenaGatewayError({
+        code: "INVALID_JSON",
+        message: "Gateway returned malformed JSON",
+        status: response.status,
+        endpoint,
+        method,
+        requestId,
+        hint: "Verify the gateway response body is valid JSON.",
+        cause: rawText.slice(0, 300),
+      });
+      return {
+        ok: false,
+        status: response.status,
+        data: null,
+        error: invalidJsonError.message,
+        errorDetails: detailsFromError(invalidJsonError),
+        raw: parsedBody.parsed,
+      };
+    }
+
+    const parsed = parsedBody.parsed;
+    const parsedPayload = isRecord(parsed) ? parsed : null;
+
+    if (!response.ok) {
+      const httpError = new AthenaGatewayError({
+        code: "HTTP_ERROR",
+        message: resolveErrorMessage(
+          parsed,
+          `Athena gateway ${method} ${endpoint} failed with status ${response.status}`,
+        ),
+        status: response.status,
+        endpoint,
+        method,
+        requestId,
+      });
+
+      return {
+        ok: false,
+        status: response.status,
+        data: null,
+        error: httpError.message,
+        errorDetails: detailsFromError(httpError),
+        raw: parsed,
+      };
+    }
 
     // Unwrap envelope: API may return { data: [...], error: null } (e.g. when cached)
     // vs raw array when uncached. Use inner data when present to avoid double nesting.
     const payloadData =
-      parsedPayload &&
-      typeof parsedPayload === "object" &&
-      "data" in parsedPayload
+      parsedPayload && "data" in parsedPayload
         ? (parsedPayload.data as T)
         : (parsed as T);
     const payloadCount =
-      parsedPayload &&
-      typeof parsedPayload === "object" &&
-      "count" in parsedPayload
-        ? (typeof parsedPayload.count === "number" || parsedPayload.count === null
+      parsedPayload && "count" in parsedPayload
+        ? typeof parsedPayload.count === "number" || parsedPayload.count === null
           ? (parsedPayload.count as number | null)
-          : undefined)
+          : undefined
         : undefined;
 
     return {
-      ok: response.ok,
+      ok: true,
       status: response.status,
       data: payloadData ?? null,
       count: payloadCount,
-      error: hasError,
+      error: undefined,
+      errorDetails: null,
       raw: parsed,
     };
   } catch (callError) {
-    const message =
-      callError instanceof Error ? callError.message : String(callError);
+    const message = callError instanceof Error ? callError.message : String(callError);
+    const networkError = new AthenaGatewayError({
+      code: "NETWORK_ERROR",
+      message: `Network error while calling ${method} ${endpoint}: ${message}`,
+      endpoint,
+      method,
+      cause: message,
+      hint: "Check gateway URL, DNS, and network reachability.",
+    });
     return {
       ok: false,
       status: 0,
       data: null,
-      error: message,
+      error: networkError.message,
+      errorDetails: detailsFromError(networkError),
       raw: null,
     };
   }

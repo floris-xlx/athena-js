@@ -5,6 +5,7 @@ import type {
   AthenaDeletePayload,
   AthenaGatewayCallOptions,
   AthenaGatewayCondition,
+  AthenaGatewayErrorDetails,
   AthenaGatewayResponse,
   AthenaInsertPayload,
   AthenaRpcCallOptions,
@@ -19,6 +20,7 @@ import { createAthenaGatewayClient } from './gateway/client.ts'
 export interface AthenaResult<T> {
   data: T | null
   error: string | null
+  errorDetails?: AthenaGatewayErrorDetails | null
   status: number
   count?: number | null
   raw: unknown
@@ -58,6 +60,7 @@ function formatResult<T>(response: AthenaGatewayResponse<T>): AthenaResult<T> {
   const result: AthenaResult<T> = {
     data: response.data ?? null,
     error: response.error ?? null,
+    errorDetails: response.errorDetails ?? null,
     status: response.status,
     raw: response.raw,
   }

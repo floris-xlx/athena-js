@@ -287,3 +287,63 @@ test('default baseUrl is used when not provided', async () => {
     restore()
   }
 })
+
+test('non-2xx response includes structured HTTP error details', async () => {
+  const original = globalThis.fetch
+  globalThis.fetch = async () =>
+    new Response(JSON.stringify({ message: 'forbidden' }), {
+      status: 403,
+      headers: { 'x-request-id': 'req_123' },
+    })
+  try {
+    const client = createAthenaGatewayClient({ baseUrl: 'https://athena-db.com' })
+    const response = await client.rpcGateway({ function: 'list_users' })
+    assert.equal(response.ok, false)
+    assert.equal(response.status, 403)
+    assert.equal(response.error, 'forbidden')
+    assert.equal(response.errorDetails?.code, 'HTTP_ERROR')
+    assert.equal(response.errorDetails?.requestId, 'req_123')
+    assert.equal(response.errorDetails?.endpoint, '/gateway/rpc')
+    assert.equal(response.errorDetails?.method, 'POST')
+  } finally {
+    globalThis.fetch = original
+  }
+})
+
+test('network failures include structured NETWORK_ERROR details', async () => {
+  const original = globalThis.fetch
+  globalThis.fetch = async () => {
+    throw new Error('socket hang up')
+  }
+  try {
+    const client = createAthenaGatewayClient({ baseUrl: 'https://athena-db.com' })
+    const response = await client.fetchGateway({ table_name: 'users' })
+    assert.equal(response.ok, false)
+    assert.equal(response.status, 0)
+    assert.equal(response.errorDetails?.code, 'NETWORK_ERROR')
+    assert.equal(response.errorDetails?.endpoint, '/gateway/fetch')
+    assert.equal(response.errorDetails?.method, 'POST')
+    assert.match(response.error ?? '', /Network error while calling POST \/gateway\/fetch/)
+  } finally {
+    globalThis.fetch = original
+  }
+})
+
+test('invalid json responses are classified as INVALID_JSON', async () => {
+  const original = globalThis.fetch
+  globalThis.fetch = async () =>
+    new Response('{"broken"', {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    })
+  try {
+    const client = createAthenaGatewayClient({ baseUrl: 'https://athena-db.com' })
+    const response = await client.fetchGateway({ table_name: 'users' })
+    assert.equal(response.ok, false)
+    assert.equal(response.status, 200)
+    assert.equal(response.errorDetails?.code, 'INVALID_JSON')
+    assert.equal(response.error, 'Gateway returned malformed JSON')
+  } finally {
+    globalThis.fetch = original
+  }
+})

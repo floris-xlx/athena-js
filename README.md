@@ -43,7 +43,9 @@ if (error) {
 }
 ```
 
-Every query resolves to `{ data, error, status, count?, raw }`. `data` is `null` on error; `error` is `null` on success.
+Every query resolves to `{ data, error, errorDetails?, status, count?, raw }`. `data` is `null` on error; `error` is `null` on success.
+
+For richer handling, inspect `errorDetails` (`code`, `status`, `endpoint`, `method`, `requestId`, etc.) or use `AthenaGatewayError` / `isAthenaGatewayError` from the package exports.
 
 ## Query builder
 

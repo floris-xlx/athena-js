@@ -3,21 +3,14 @@ import { test } from "node:test";
 import crypto from "crypto";
 import { createClient } from "../src/client.ts";
 
-const ATHENA_URL =
-  process.env.ATHENA_URL_E2E ?? "https://mirror1.athena-db.com";
-const ATHENA_API_KEY =
-  process.env.ATHENA_API_KEY_E2E ??
-  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYXV0aGVudGljYXRlZCIsImVtYWlsIjoiZmxvcmlzQHh5bGV4LmFpIiwiZXhwIjoyNDk3MDMzNjY2fQ.LdPqTGaFq5pTokW1DA81WFjmG4nReJCOSKr3mFtXNoA";
+const ATHENA_URL = process.env.ATHENA_URL_E2E;
+const ATHENA_API_KEY = process.env.ATHENA_API_KEY_E2E;
 const ATHENA_CLIENT = process.env.ATHENA_CLIENT_E2E;
 const ATHENA_COMPANY_ID = process.env.ATHENA_COMPANY_ID_E2E ?? "athena_logging";
 const ATHENA_ORG_ID = process.env.ATHENA_ORG_ID_E2E ?? "athena_logging";
 const ATHENA_USER_ID = process.env.ATHENA_USER_ID_E2E ?? "athena_logging";
 
-if (!ATHENA_URL || !ATHENA_API_KEY) {
-  throw new Error(
-    "ATHENA_URL_E2E and ATHENA_API_KEY_E2E (or defaults) are required for E2E",
-  );
-}
+const testFn = ATHENA_URL && ATHENA_API_KEY ? test : test.skip;
 
 // Define type for the table schema
 type AthenaAdapterE2E = {
@@ -32,7 +25,7 @@ type AthenaAdapterE2E = {
   updated_at?: string;
 };
 
-test("adapter E2E: insert, select, update, delete on athena_adapter_e2e", async () => {
+testFn("adapter E2E: insert, select, update, delete on athena_adapter_e2e", async () => {
   const athena = createClient(ATHENA_URL, ATHENA_API_KEY, {
     client: ATHENA_CLIENT,
     backend: { type: "athena" },

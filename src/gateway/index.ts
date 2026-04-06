@@ -5,10 +5,13 @@
  */
 
 export { useAthenaGateway } from "./use-athena-gateway.js";
+export { AthenaGatewayError, isAthenaGatewayError } from "./errors.ts";
 export type {
   AthenaGatewayHookConfig,
   AthenaGatewayHookResult,
   AthenaGatewayCallOptions,
+  AthenaGatewayErrorCode,
+  AthenaGatewayErrorDetails,
   AthenaRpcFilter,
   AthenaRpcFilterOperator,
   AthenaFetchPayload,

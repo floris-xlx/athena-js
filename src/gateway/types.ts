@@ -169,7 +169,25 @@ export interface AthenaGatewayResponse<T = unknown> {
   data: T | null
   count?: number | null
   error?: string
+  errorDetails?: AthenaGatewayErrorDetails | null
   raw: unknown
+}
+
+export type AthenaGatewayErrorCode =
+  | 'NETWORK_ERROR'
+  | 'HTTP_ERROR'
+  | 'INVALID_JSON'
+  | 'UNKNOWN_ERROR'
+
+export interface AthenaGatewayErrorDetails {
+  code: AthenaGatewayErrorCode
+  message: string
+  status: number
+  endpoint?: AthenaGatewayEndpointPath
+  method?: AthenaGatewayMethod
+  requestId?: string
+  hint?: string
+  cause?: string
 }
 
 export interface AthenaGatewayResponseLog extends AthenaGatewayResponse {

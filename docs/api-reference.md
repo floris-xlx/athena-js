@@ -284,6 +284,7 @@ Every query and mutation resolves to:
 interface AthenaResult<T> {
   data: T | null      // response payload, null on error
   error: string | null // error message, null on success
+  errorDetails?: AthenaGatewayErrorDetails | null // structured gateway failure metadata
   status: number       // HTTP status code
   count?: number | null // optional exact count (RPC / count-enabled calls)
   raw: unknown         // unprocessed response body
@@ -491,11 +492,37 @@ interface AthenaGatewayResponse<T = unknown> {
   data: T | null     // parsed response body, null on error
   count?: number | null // optional count (RPC exact count)
   error?: string     // error message extracted from the response
+  errorDetails?: AthenaGatewayErrorDetails | null // structured gateway failure details
   raw: unknown       // unprocessed parsed body
 }
 ```
 
 `AthenaGatewayResponseLog` extends this with a `timestamp: string` field (ISO 8601).
+
+---
+
+## AthenaGatewayErrorDetails
+
+Structured failure metadata attached to `AthenaGatewayResponse.errorDetails` and `AthenaResult.errorDetails`.
+
+```ts
+type AthenaGatewayErrorCode = "NETWORK_ERROR" | "HTTP_ERROR" | "INVALID_JSON" | "UNKNOWN_ERROR"
+
+interface AthenaGatewayErrorDetails {
+  code: AthenaGatewayErrorCode
+  message: string
+  status: number
+  endpoint?: "/gateway/fetch" | "/gateway/insert" | "/gateway/update" | "/gateway/delete" | "/gateway/rpc"
+  method?: "POST" | "PUT" | "DELETE"
+  requestId?: string
+  hint?: string
+  cause?: string
+}
+```
+
+The package also exports:
+- `AthenaGatewayError` (typed exception class)
+- `isAthenaGatewayError(value)` (type guard)
 
 ---
 

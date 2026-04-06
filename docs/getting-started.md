@@ -52,7 +52,7 @@ Every query starts with `.from(tableName)` and ends with `.select()`.
 
 ```ts
 // fetch all columns
-const { data, error, status } = await athena.from("users").select();
+const { data, error, errorDetails, status } = await athena.from("users").select();
 
 if (error) {
   console.error("query failed:", error);
@@ -273,21 +273,22 @@ The hook also exposes `insertGateway`, `updateGateway`, `deleteGateway`, and `rp
 
 ## 13. Error handling
 
-All query methods return `{ data, error, status, count?, raw }`. Check `error` before using `data`.
+All query methods return `{ data, error, errorDetails?, status, count?, raw }`. Check `error` before using `data`.
 
 ```ts
-const { data, error, status } = await athena.from("users").select();
+const { data, error, errorDetails, status } = await athena.from("users").select();
 
 if (error) {
-  // error is a string message from the gateway
+  // error is a readable message
   console.error(`[${status}] ${error}`);
+  console.error(errorDetails?.code, errorDetails?.endpoint, errorDetails?.requestId);
   return;
 }
 
 // data is typed as User[] | null here
 ```
 
-The React hook sets `error` state automatically and throws from the gateway functions — use `try/catch` around `insertGateway`, `updateGateway`, `deleteGateway`, and `rpcGateway` calls.
+The React hook sets `error` state automatically and throws from the gateway functions, so use `try/catch` around `insertGateway`, `updateGateway`, `deleteGateway`, and `rpcGateway` calls. For typed exceptions, use `AthenaGatewayError` and `isAthenaGatewayError`.
 
 ## 14. Local validation commands
 
@@ -303,3 +304,4 @@ pnpm check:all
 ## Next steps
 
 - [API reference](api-reference.md) — complete documentation for every method, option, and type
+

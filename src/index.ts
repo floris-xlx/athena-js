@@ -8,6 +8,7 @@
 // Athena client
 export { createClient, AthenaClient } from "./client.js";
 export { Backend } from "./gateway/types.js";
+export { AthenaGatewayError, isAthenaGatewayError } from "./gateway/errors.ts";
 export type {
   RpcQueryBuilder,
   RpcOrderOptions,
@@ -21,6 +22,8 @@ export type {
   AthenaRpcFilterOperator,
   AthenaRpcOrder,
   AthenaRpcPayload,
+  AthenaGatewayErrorCode,
+  AthenaGatewayErrorDetails,
   BackendType,
   BackendConfig,
   AthenaGatewayCallOptions,

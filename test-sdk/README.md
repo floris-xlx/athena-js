@@ -1,51 +1,68 @@
-# Athena JS SDK – Express Test Client
+# Athena JS Test SDK
 
-Basic Express app that exercises the `@xylex-group/athena` SDK.
+Express test service that exercises `@xylex-group/athena` through HTTP routes.
 
 ## Setup
 
-From the athena-js repo root:
+From the repository root:
 
 ```bash
-npm run build          # build the SDK first
+pnpm build
 cd test-sdk
-npm install
+pnpm install
 ```
 
 ## Run
 
 ```bash
-npm run start
-# or with auto-reload:
-npm run dev
+pnpm start
+# or
+pnpm dev
 ```
 
-Environment variables from `.env` and `.env.local` are loaded automatically. On Windows PowerShell, to set vars inline: `$env:ATHENA_CLIENT="xylex_cloud"; npm run dev`
-
-## Environment
-
-| Variable               | Default              | Description                                |
-|------------------------|----------------------|--------------------------------------------|
-| `ATHENA_URL`           | `https://athena-db.com` | Athena gateway base URL                  |
-| `ATHENA_API_KEY`       | _(required)_         | API key for Athena gateway                 |
-| `ATHENA_CLIENT`        | `railway_direct`     | Client routing key (sent as `x-athena-client`) |
-| `DEBUG_ATHENA_REQUESTS`| -                    | Set to `1` to log outgoing Athena request headers |
-| `PORT`                 | `3000`               | HTTP server port                           |
-
-## Endpoints
-
-| Method | Path                               | Description                    |
-|--------|------------------------------------|--------------------------------|
-| GET    | `/health`                          | Health check                   |
-| GET    | `/table/:name?limit=&offset=`      | Select rows (paginated)        |
-| GET    | `/table/:name/by/:column/:value`   | Select by column equality      |
-| POST   | `/table/:name`                     | Insert rows (body = insert payload) |
-| PATCH  | `/table/:name/by/:column/:value`   | Update by column match         |
-| DELETE | `/table/:name/:resourceId`         | Delete by resource_id          |
-
-## Example
+## Run E2E tests
 
 ```bash
-curl http://localhost:3000/health
-curl "http://localhost:3000/table/users?limit=5"
+pnpm test:e2e
+```
+
+The E2E tests boot the Express server and verify route behavior and gateway forwarding, including structured error responses.
+
+## Environment variables
+
+| Variable | Default | Description |
+|---|---|---|
+| `ATHENA_URL` | `https://mirror3.athena-db.com` | Athena gateway base URL |
+| `ATHENA_API_KEY` | _required_ | Athena gateway API key |
+| `ATHENA_CLIENT` | `athena_logging` | Client routing key (`X-Athena-Client`) |
+| `PORT` | `3000` | Local server port |
+
+## Routes
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/health` | Liveness endpoint |
+| `GET` | `/table/:name?limit=&offset=` | Read rows with pagination |
+| `GET` | `/table/:name/by/:column/:value` | Read one row by equality filter |
+| `POST` | `/table/:name` | Insert row(s) |
+| `PATCH` | `/table/:name/by/:column/:value` | Update row(s) by equality filter |
+| `DELETE` | `/table/:name/:resourceId` | Delete row by `resource_id` |
+| `POST` | `/rpc/:functionName` | Execute RPC through `POST /gateway/rpc` |
+
+## Error response shape
+
+All server-side validation and upstream failures are normalized:
+
+```json
+{
+  "error": {
+    "code": "VALIDATION_ERROR",
+    "message": "limit must be a non-negative integer",
+    "details": {
+      "field": "limit",
+      "received": "abc"
+    }
+  },
+  "responseTimeMs": 2
+}
 ```
