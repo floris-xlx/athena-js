@@ -1,8 +1,26 @@
-import express, { type Express, type NextFunction, type Request, type Response } from "express";
+import express, {
+  type Express,
+  type NextFunction,
+  type Request,
+  type Response,
+} from "express";
 import chalk from "chalk";
-import { createClient, type AthenaResult, type AthenaRpcFilter, type AthenaSdkClient } from "../../src/index.ts";
+import {
+  createClient,
+  type AthenaResult,
+  type AthenaRpcFilter,
+  type AthenaSdkClient,
+} from "../../src/index.js";
+import type { AthenaConditionValue } from "../../src/gateway/types.ts";
 
 type Logger = Pick<Console, "log" | "warn" | "error">;
+
+function rpcScalarFilterValue(
+  value: AthenaRpcFilter["value"] | undefined,
+): AthenaConditionValue | null {
+  if (value === undefined) return null;
+  return value as AthenaConditionValue;
+}
 
 type ApiErrorCode =
   | "VALIDATION_ERROR"
@@ -56,10 +74,15 @@ function parseNonNegativeInteger(
   const normalized = Array.isArray(value) ? value[0] : value;
   const parsed = Number(normalized);
   if (!Number.isInteger(parsed) || parsed < 0) {
-    throw new ApiError(400, "VALIDATION_ERROR", `${fieldName} must be a non-negative integer`, {
-      field: fieldName,
-      received: normalized,
-    });
+    throw new ApiError(
+      400,
+      "VALIDATION_ERROR",
+      `${fieldName} must be a non-negative integer`,
+      {
+        field: fieldName,
+        received: normalized,
+      },
+    );
   }
   return parsed;
 }
@@ -76,9 +99,14 @@ function assertNonEmptyParam(value: string, fieldName: string) {
 
 function assertObjectBody(value: unknown, fieldName: string) {
   if (!isRecord(value)) {
-    throw new ApiError(400, "VALIDATION_ERROR", `${fieldName} must be a JSON object`, {
-      field: fieldName,
-    });
+    throw new ApiError(
+      400,
+      "VALIDATION_ERROR",
+      `${fieldName} must be a JSON object`,
+      {
+        field: fieldName,
+      },
+    );
   }
   return value;
 }
@@ -103,7 +131,8 @@ function toErrorResponse(error: unknown, responseTimeMs: number) {
     body: {
       error: {
         code: "INTERNAL_SERVER_ERROR",
-        message: error instanceof Error ? error.message : "Unexpected server error",
+        message:
+          error instanceof Error ? error.message : "Unexpected server error",
         details: null,
       },
       responseTimeMs,
@@ -187,117 +216,198 @@ export class AthenaTestSdkServer {
       this.sendSuccess(res, 200, { ok: true, sdk: "athena-js" });
     });
 
-    this.app.get("/table/:name", this.wrap(async (req, res) => {
-      const tableName = assertNonEmptyParam(req.params.name, "name");
-      const limit = parseNonNegativeInteger(req.query.limit as string | undefined, "limit", 10);
-      const offset = parseNonNegativeInteger(req.query.offset as string | undefined, "offset", 0);
+    this.app.get(
+      "/table/:name",
+      this.wrap(async (req, res) => {
+        const tableName = assertNonEmptyParam(req.params.name, "name");
+        const limit = parseNonNegativeInteger(
+          req.query.limit as string | undefined,
+          "limit",
+          10,
+        );
+        const offset = parseNonNegativeInteger(
+          req.query.offset as string | undefined,
+          "offset",
+          0,
+        );
 
-      const result = await this.athenaClient.from(tableName).limit(limit).offset(offset).select();
-      const data = this.unwrapResult("select rows", result);
-      this.sendSuccess(res, 200, { data });
-    }));
+        const result = await this.athenaClient
+          .from(tableName)
+          .limit(limit)
+          .offset(offset)
+          .select();
+        const data = this.unwrapResult("select rows", result);
+        this.sendSuccess(res, 200, { data });
+      }),
+    );
 
-    this.app.get("/table/:name/by/:column/:value", this.wrap(async (req, res) => {
-      const tableName = assertNonEmptyParam(req.params.name, "name");
-      const column = assertNonEmptyParam(req.params.column, "column");
-      const value = req.params.value;
+    this.app.get(
+      "/table/:name/by/:column/:value",
+      this.wrap(async (req, res) => {
+        const tableName = assertNonEmptyParam(req.params.name, "name");
+        const column = assertNonEmptyParam(req.params.column, "column");
+        const value = req.params.value;
 
-      const result = await this.athenaClient.from(tableName).eq(column, value).maybeSingle();
-      const data = this.unwrapResult("select single row", result);
-      this.sendSuccess(res, 200, { data });
-    }));
+        const result = await this.athenaClient
+          .from(tableName)
+          .eq(column, value)
+          .maybeSingle();
+        const data = this.unwrapResult("select single row", result);
+        this.sendSuccess(res, 200, { data });
+      }),
+    );
 
-    this.app.post("/table/:name", this.wrap(async (req, res) => {
-      const tableName = assertNonEmptyParam(req.params.name, "name");
-      if (!isRecord(req.body) && !Array.isArray(req.body)) {
-        throw new ApiError(400, "VALIDATION_ERROR", "request body must be an object or array");
-      }
-
-      const result = await this.athenaClient.from(tableName).insert(req.body).select();
-      const data = this.unwrapResult("insert rows", result);
-      this.sendSuccess(res, 201, { data });
-    }));
-
-    this.app.patch("/table/:name/by/:column/:value", this.wrap(async (req, res) => {
-      const tableName = assertNonEmptyParam(req.params.name, "name");
-      const column = assertNonEmptyParam(req.params.column, "column");
-      const value = req.params.value;
-      const body = assertObjectBody(req.body, "request body");
-
-      const result = await this.athenaClient
-        .from(tableName)
-        .eq(column, value)
-        .update(body)
-        .select();
-      const data = this.unwrapResult("update rows", result);
-      this.sendSuccess(res, 200, { data });
-    }));
-
-    this.app.delete("/table/:name/:resourceId", this.wrap(async (req, res) => {
-      const tableName = assertNonEmptyParam(req.params.name, "name");
-      const resourceId = assertNonEmptyParam(req.params.resourceId, "resourceId");
-
-      const result = await this.athenaClient.from(tableName).delete({ resourceId });
-      const data = this.unwrapResult("delete rows", result);
-      this.sendSuccess(res, 200, { data });
-    }));
-
-    this.app.post("/rpc/:functionName", this.wrap(async (req, res) => {
-      const functionName = assertNonEmptyParam(req.params.functionName, "functionName");
-      const body = req.body === undefined ? {} : req.body;
-      if (!isRecord(body)) {
-        throw new ApiError(400, "VALIDATION_ERROR", "request body must be a JSON object");
-      }
-
-      const args = isRecord(body.args) ? body.args : undefined;
-      const schema = typeof body.schema === "string" ? body.schema : undefined;
-      const select = typeof body.select === "string" || Array.isArray(body.select) ? body.select : undefined;
-      const count = body.count === "exact" ? "exact" : undefined;
-      const limit = body.limit === undefined ? undefined : parseNonNegativeInteger(String(body.limit), "limit", 0);
-      const offset = body.offset === undefined ? undefined : parseNonNegativeInteger(String(body.offset), "offset", 0);
-      const order =
-        isRecord(body.order) && typeof body.order.column === "string"
-          ? { column: body.order.column, ascending: body.order.ascending !== false }
-          : undefined;
-      const filters = Array.isArray(body.filters) ? (body.filters as AthenaRpcFilter[]) : [];
-
-      let query = this.athenaClient.rpc(functionName, args, { schema, count });
-      for (const filter of filters) {
-        if (!filter || typeof filter.column !== "string" || typeof filter.operator !== "string") {
-          throw new ApiError(400, "VALIDATION_ERROR", "invalid rpc filter shape");
+    this.app.post(
+      "/table/:name",
+      this.wrap(async (req, res) => {
+        const tableName = assertNonEmptyParam(req.params.name, "name");
+        if (!isRecord(req.body) && !Array.isArray(req.body)) {
+          throw new ApiError(
+            400,
+            "VALIDATION_ERROR",
+            "request body must be an object or array",
+          );
         }
-        query = this.applyRpcFilter(query, filter);
-      }
 
-      if (order) {
-        query = query.order(order.column, { ascending: order.ascending });
-      }
-      if (typeof limit === "number") {
-        query = query.limit(limit);
-      }
-      if (typeof offset === "number") {
-        query = query.offset(offset);
-      }
+        const result = await this.athenaClient
+          .from(tableName)
+          .insert(req.body)
+          .select();
+        const data = this.unwrapResult("insert rows", result);
+        this.sendSuccess(res, 201, { data });
+      }),
+    );
 
-      const result = await query.select(select);
-      const data = this.unwrapResult("execute rpc", result);
-      this.sendSuccess(res, 200, { data, count: result.count ?? null });
-    }));
+    this.app.patch(
+      "/table/:name/by/:column/:value",
+      this.wrap(async (req, res) => {
+        const tableName = assertNonEmptyParam(req.params.name, "name");
+        const column = assertNonEmptyParam(req.params.column, "column");
+        const value = req.params.value;
+        const body = assertObjectBody(req.body, "request body");
+
+        const result = await this.athenaClient
+          .from(tableName)
+          .eq(column, value)
+          .update(body)
+          .select();
+        const data = this.unwrapResult("update rows", result);
+        this.sendSuccess(res, 200, { data });
+      }),
+    );
+
+    this.app.delete(
+      "/table/:name/:resourceId",
+      this.wrap(async (req, res) => {
+        const tableName = assertNonEmptyParam(req.params.name, "name");
+        const resourceId = assertNonEmptyParam(
+          req.params.resourceId,
+          "resourceId",
+        );
+
+        const result = await this.athenaClient
+          .from(tableName)
+          .delete({ resourceId });
+        const data = this.unwrapResult("delete rows", result);
+        this.sendSuccess(res, 200, { data });
+      }),
+    );
+
+    this.app.post(
+      "/rpc/:functionName",
+      this.wrap(async (req, res) => {
+        const functionName = assertNonEmptyParam(
+          req.params.functionName,
+          "functionName",
+        );
+        const body = req.body === undefined ? {} : req.body;
+        if (!isRecord(body)) {
+          throw new ApiError(
+            400,
+            "VALIDATION_ERROR",
+            "request body must be a JSON object",
+          );
+        }
+
+        const args = isRecord(body.args) ? body.args : undefined;
+        const schema =
+          typeof body.schema === "string" ? body.schema : undefined;
+        const select =
+          typeof body.select === "string" || Array.isArray(body.select)
+            ? body.select
+            : undefined;
+        const count = body.count === "exact" ? "exact" : undefined;
+        const limit =
+          body.limit === undefined
+            ? undefined
+            : parseNonNegativeInteger(String(body.limit), "limit", 0);
+        const offset =
+          body.offset === undefined
+            ? undefined
+            : parseNonNegativeInteger(String(body.offset), "offset", 0);
+        const order =
+          isRecord(body.order) && typeof body.order.column === "string"
+            ? {
+                column: body.order.column,
+                ascending: body.order.ascending !== false,
+              }
+            : undefined;
+        const filters = Array.isArray(body.filters)
+          ? (body.filters as AthenaRpcFilter[])
+          : [];
+
+        let query = this.athenaClient.rpc(functionName, args, {
+          schema,
+          count,
+        });
+        for (const filter of filters) {
+          if (
+            !filter ||
+            typeof filter.column !== "string" ||
+            typeof filter.operator !== "string"
+          ) {
+            throw new ApiError(
+              400,
+              "VALIDATION_ERROR",
+              "invalid rpc filter shape",
+            );
+          }
+          query = this.applyRpcFilter(query, filter);
+        }
+
+        if (order) {
+          query = query.order(order.column, { ascending: order.ascending });
+        }
+        if (typeof limit === "number") {
+          query = query.limit(limit);
+        }
+        if (typeof offset === "number") {
+          query = query.offset(offset);
+        }
+
+        const result = await query.select(select);
+        const data = this.unwrapResult("execute rpc", result);
+        this.sendSuccess(res, 200, { data, count: result.count ?? null });
+      }),
+    );
   }
 
   private registerErrorMiddleware() {
-    this.app.use((error: unknown, _req: Request, res: Response, _next: NextFunction) => {
-      const responseTimeMs = Math.round(
-        performance.now() - (typeof res.locals.startedAt === "number" ? res.locals.startedAt : performance.now()),
-      );
-      const { statusCode, body } = toErrorResponse(error, responseTimeMs);
-      res.status(statusCode).json(body);
-    });
+    this.app.use(
+      (error: unknown, _req: Request, res: Response, _next: NextFunction) => {
+        const responseTimeMs = Math.round(
+          performance.now() -
+            (typeof res.locals.startedAt === "number"
+              ? res.locals.startedAt
+              : performance.now()),
+        );
+        const { statusCode, body } = toErrorResponse(error, responseTimeMs);
+        res.status(statusCode).json(body);
+      },
+    );
   }
 
-  private wrap(
-    handler: (req: Request, res: Response) => Promise<void>,
-  ) {
+  private wrap(handler: (req: Request, res: Response) => Promise<void>) {
     return (req: Request, res: Response, next: NextFunction) => {
       handler(req, res).catch(next);
     };
@@ -305,14 +415,24 @@ export class AthenaTestSdkServer {
 
   private unwrapResult<T>(operation: string, result: AthenaResult<T>) {
     if (result.error) {
-      throw new AthenaGatewayResultError(operation, result as AthenaResult<unknown>);
+      throw new AthenaGatewayResultError(
+        operation,
+        result as AthenaResult<unknown>,
+      );
     }
     return result.data ?? null;
   }
 
-  private sendSuccess(res: Response, statusCode: number, body: Record<string, unknown>) {
+  private sendSuccess(
+    res: Response,
+    statusCode: number,
+    body: Record<string, unknown>,
+  ) {
     const responseTimeMs = Math.round(
-      performance.now() - (typeof res.locals.startedAt === "number" ? res.locals.startedAt : performance.now()),
+      performance.now() -
+        (typeof res.locals.startedAt === "number"
+          ? res.locals.startedAt
+          : performance.now()),
     );
     res.status(statusCode).json({
       ...body,
@@ -320,36 +440,45 @@ export class AthenaTestSdkServer {
     });
   }
 
-  private applyRpcFilter<T>(
+  private applyRpcFilter(
     query: ReturnType<AthenaSdkClient["rpc"]>,
     filter: AthenaRpcFilter,
   ) {
+    const scalar = rpcScalarFilterValue(filter.value);
     switch (filter.operator) {
       case "eq":
-        return query.eq(filter.column, filter.value ?? null);
+        return query.eq(filter.column, scalar);
       case "neq":
-        return query.neq(filter.column, filter.value ?? null);
+        return query.neq(filter.column, scalar);
       case "gt":
-        return query.gt(filter.column, filter.value ?? null);
+        return query.gt(filter.column, scalar);
       case "gte":
-        return query.gte(filter.column, filter.value ?? null);
+        return query.gte(filter.column, scalar);
       case "lt":
-        return query.lt(filter.column, filter.value ?? null);
+        return query.lt(filter.column, scalar);
       case "lte":
-        return query.lte(filter.column, filter.value ?? null);
+        return query.lte(filter.column, scalar);
       case "like":
-        return query.like(filter.column, filter.value ?? null);
+        return query.like(filter.column, scalar);
       case "ilike":
-        return query.ilike(filter.column, filter.value ?? null);
+        return query.ilike(filter.column, scalar);
       case "is":
-        return query.is(filter.column, filter.value ?? null);
+        return query.is(filter.column, scalar);
       case "in":
         if (!Array.isArray(filter.value)) {
-          throw new ApiError(400, "VALIDATION_ERROR", "rpc in filter requires an array value");
+          throw new ApiError(
+            400,
+            "VALIDATION_ERROR",
+            "rpc in filter requires an array value",
+          );
         }
         return query.in(filter.column, filter.value);
       default:
-        throw new ApiError(400, "VALIDATION_ERROR", `unsupported rpc filter operator: ${filter.operator}`);
+        throw new ApiError(
+          400,
+          "VALIDATION_ERROR",
+          `unsupported rpc filter operator: ${filter.operator}`,
+        );
     }
   }
 }
