@@ -208,7 +208,7 @@ export interface AthenaGatewayCallLog {
 }
 
 export interface AthenaGatewayHookResult {
-  queryGateway: <T = unknown>(
+  queryGateway?: <T = unknown>(
     payload: AthenaQueryPayload,
     options?: AthenaGatewayCallOptions,
   ) => Promise<AthenaGatewayResponse<T>>
