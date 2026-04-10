@@ -11,6 +11,7 @@ export type AthenaGatewayEndpointPath =
   | '/gateway/update'
   | '/gateway/delete'
   | '/gateway/rpc'
+  | '/gateway/query'
   | `/rpc/${string}`
 
 export type AthenaCountOption = 'exact' | 'planned' | 'estimated'
@@ -118,6 +119,10 @@ export interface AthenaRpcPayload {
   limit?: number
   offset?: number
   order?: AthenaRpcOrder
+}
+
+export interface AthenaQueryPayload {
+  query: string
 }
 
 /** Backend type for Athena client (aligns with athena-rs) */
