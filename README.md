@@ -1,6 +1,6 @@
 # athena-js
 
-current version: `1.2.1`
+current version: `1.3.0`
 `@xylex-group/athena` is a database driver and API gateway SDK that lets you interact with SQL backends over HTTP through a fluent builder API. It ships a typed query builder for Node.js / server environments and a React hook for client-side use.
 
 ## Install
@@ -47,6 +47,91 @@ Every query resolves to `{ data, error, errorDetails?, status, count?, raw }`. `
 
 For richer handling, inspect `errorDetails` (`code`, `status`, `endpoint`, `method`, `requestId`, etc.) or use `AthenaGatewayError` / `isAthenaGatewayError` from the package exports.
 
+## Reliability helper APIs
+
+The SDK exports composable helpers to reduce repetitive route-handler logic.
+
+### Result unwrapping and success guards
+
+```ts
+import {
+  isOk,
+  unwrap,
+  unwrapRows,
+  unwrapOne,
+  requireSuccess,
+  requireAffected,
+} from "@xylex-group/athena";
+
+const result = await athena.from("users").select("id,name");
+
+if (isOk(result)) {
+  const rows = unwrapRows(result); // typed User[]
+  console.log(rows.length);
+}
+
+const one = await athena.from("users").eq("id", 1).single("id,name");
+const user = unwrapOne(one, { allowNull: true });
+
+const inserted = await athena
+  .from("users")
+  .insert({ name: "Alice" })
+  .select("id", { count: "exact" });
+
+requireSuccess(inserted, { table: "users", operation: "insert" });
+requireAffected(inserted, { min: 1 }, { table: "users", operation: "insert" });
+```
+
+`requireAffected` uses `result.count`; request it on writes with `{ count: "exact" }` when you need enforced postconditions.
+
+### Error normalization
+
+```ts
+import { normalizeAthenaError } from "@xylex-group/athena";
+
+const result = await athena.from("users").insert({ id: 1 }).select();
+if (result.error) {
+  const err = normalizeAthenaError(result, {
+    table: "users",
+    operation: "insert",
+  });
+  if (err.kind === "unique_violation") {
+    // deterministic conflict handling
+  }
+}
+```
+
+Normalized errors expose stable `kind` values (`unique_violation`, `validation`, `auth`, `rate_limit`, `transient`, etc.) plus operation metadata.
+
+### Numeric coercion
+
+```ts
+import { coerceInt, assertInt } from "@xylex-group/athena";
+
+const maybeCaseId = coerceInt(req.query.case_id, { min: 1 });
+if (maybeCaseId == null) throw new Error("Invalid case id");
+
+const caseId = assertInt(req.query.case_id, "case_id", { min: 1 });
+```
+
+### Retry helper
+
+```ts
+import { withRetry } from "@xylex-group/athena";
+
+const result = await withRetry(
+  {
+    retries: 3,
+    backoff: "exponential",
+    baseDelayMs: 100,
+    jitter: true,
+  },
+  () => athena.from("users").select("id,name"),
+);
+```
+
+By default, retries target transient/rate-limit failures; use `shouldRetry` for custom policies.
+
 ## Query builder
 
 ### Reading rows
@@ -70,20 +155,20 @@ Filters accumulate on the builder and are sent together when the query executes.
 const { data } = await athena
   .from("characters")
   .select("id, name")
-  .eq("active", true)           // column = value
-  .neq("role", "guest")         // column != value
-  .gt("level", 5)               // column > value
-  .gte("score", 100)            // column >= value
-  .lt("age", 30)                // column < value
+  .eq("active", true) // column = value
+  .neq("role", "guest") // column != value
+  .gt("level", 5) // column > value
+  .gte("score", 100) // column >= value
+  .lt("age", 30) // column < value
   .lte("created_at", "2024-01-01") // column <= value
-  .like("name", "Ali%")         // SQL LIKE (case-sensitive)
+  .like("name", "Ali%") // SQL LIKE (case-sensitive)
   .ilike("email", "%@example%") // SQL ILIKE (case-insensitive)
-  .is("deleted_at", null)       // IS NULL / IS TRUE etc.
-  .in("status", ["active", "pending"])    // IN (…)
-  .contains("tags", ["hero"])             // array contains value
+  .is("deleted_at", null) // IS NULL / IS TRUE etc.
+  .in("status", ["active", "pending"]) // IN (…)
+  .contains("tags", ["hero"]) // array contains value
   .containedBy("tags", ["hero", "villain"]) // array is subset of value
   .match({ role: "admin", active: true }) // multiple eq filters at once
-  .not("role", "eq", "banned")  // NOT col op val
+  .not("role", "eq", "banned") // NOT col op val
   .or("status.eq.active,status.eq.pending"); // OR expression
 ```
 
@@ -136,7 +221,14 @@ const { data: firstUser } = await athena
   .single("id,email");
 
 const { data: readOnlyUser } = await athena
-  .rpc<{ id: number; email: string }>("list_users", { role: "admin" }, { get: true, count: "planned", head: true })
+  .rpc<{
+    id: number;
+    email: string;
+  }>(
+    "list_users",
+    { role: "admin" },
+    { get: true, count: "planned", head: true },
+  )
   .eq("id", 1)
   .single("id,email");
 ```
@@ -148,11 +240,11 @@ RPC options: `schema`, `count` (`"exact" | "planned" | "estimated"`), `head`, `g
 
 Pass options as the second argument to `.select()`:
 
-| Option | Type | Description |
-|--------|------|-------------|
-| `count` | `"exact" \| "planned" \| "estimated"` | request a row count alongside the data |
-| `head` | `boolean` | return response headers only (no rows) |
-| `stripNulls` | `boolean` | strip null values from rows (default `true`) |
+| Option       | Type                                  | Description                                  |
+| ------------ | ------------------------------------- | -------------------------------------------- |
+| `count`      | `"exact" \| "planned" \| "estimated"` | request a row count alongside the data       |
+| `head`       | `boolean`                             | return response headers only (no rows)       |
+| `stripNulls` | `boolean`                             | strip null values from rows (default `true`) |
 
 ```ts
 const { data } = await athena
@@ -211,13 +303,13 @@ const { data } = await athena
 // - upsert(many) => AthenaResult<Row[]>
 ```
 
-| Option | Type | Description |
-|--------|------|-------------|
-| `onConflict` | `string \| string[]` | column(s) that determine a conflict |
-| `updateBody` | `object` | fields to apply when a conflict occurs |
-| `defaultToNull` | `boolean` | write explicit `null` for missing fields |
-| `count` | `"exact" \| "planned" \| "estimated"` | request a row count |
-| `head` | `boolean` | return headers only |
+| Option          | Type                                  | Description                              |
+| --------------- | ------------------------------------- | ---------------------------------------- |
+| `onConflict`    | `string \| string[]`                  | column(s) that determine a conflict      |
+| `updateBody`    | `object`                              | fields to apply when a conflict occurs   |
+| `defaultToNull` | `boolean`                             | write explicit `null` for missing fields |
+| `count`         | `"exact" \| "planned" \| "estimated"` | request a row count                      |
+| `head`          | `boolean`                             | return headers only                      |
 
 ### Delete
 
@@ -295,12 +387,16 @@ Hook config options mirror the client options: `baseUrl`, `apiKey`, `headers`, `
 Pass user and tenant context to every request without repeating it on each call:
 
 ```ts
-const athena = createClient("https://athena-db.com", process.env.ATHENA_API_KEY, {
-  headers: {
-    "X-User-Id": currentUser.id,
-    "X-Organization-Id": currentUser.organizationId ?? "",
+const athena = createClient(
+  "https://athena-db.com",
+  process.env.ATHENA_API_KEY,
+  {
+    headers: {
+      "X-User-Id": currentUser.id,
+      "X-Organization-Id": currentUser.organizationId ?? "",
+    },
   },
-});
+);
 ```
 
 Or pass per-call via options. The Athena server interprets `url` and `key` based on the configured backend type.
@@ -308,11 +404,15 @@ Or pass per-call via options. The Athena server interprets `url` and `key` based
 ## Custom headers
 
 ```ts
-const athena = createClient("https://athena-db.com", process.env.ATHENA_API_KEY, {
-  headers: {
-    "X-Custom-Header": "value",
+const athena = createClient(
+  "https://athena-db.com",
+  process.env.ATHENA_API_KEY,
+  {
+    headers: {
+      "X-Custom-Header": "value",
+    },
   },
-});
+);
 ```
 
 Per-call headers are merged with the client-level headers, with per-call values winning on conflict.
@@ -329,7 +429,10 @@ interface User {
   active: boolean;
 }
 
-const { data } = await athena.from<User>("users").select("id, name").eq("active", true);
+const { data } = await athena
+  .from<User>("users")
+  .select("id, name")
+  .eq("active", true);
 // data is User[] | null
 ```
 

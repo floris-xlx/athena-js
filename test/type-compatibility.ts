@@ -1,4 +1,14 @@
-import { createClient, type AthenaResult } from "../src/index.ts"
+import {
+  createClient,
+  isOk,
+  requireAffected,
+  requireSuccess,
+  unwrap,
+  unwrapOne,
+  unwrapRows,
+  type RequireAffectedOptions,
+  type AthenaResult,
+} from "../src/index.ts"
 
 interface UserRow {
   id: string
@@ -17,6 +27,10 @@ declare function acceptsMaybeUserPromise(value: Promise<AthenaResult<UserRow | n
 declare function acceptsMaybeUserPickPromise(
   value: Promise<AthenaResult<Pick<UserRow, "id"> | null>>,
 ): void
+declare function acceptsUserRow(value: UserRow): void
+declare function acceptsUserRows(value: UserRow[]): void
+declare function acceptsNullableUserRow(value: UserRow | null): void
+declare function acceptsNumber(value: number): void
 
 declare function acceptsUserInsertMutation(
   value: PromiseLike<AthenaResult<UserRow>>,
@@ -61,6 +75,32 @@ acceptsUserArrayWithCountPromise(client.rpc<UserRow>('list_users', {}, { head: t
 client.rpc<UserRow>('list_users').select().then(result => acceptsCountValue(result.count))
 acceptsUserArrayPromise(client.rpc<UserRow>('list_users').order('created_at').range(0, 24).select())
 acceptsMaybeUserPromise(client.rpc<UserRow>('list_users').order('created_at', { ascending: false }).single())
+
+const helperResult = users.select()
+helperResult.then(result => {
+  if (isOk(result)) {
+    const successful = requireSuccess(result)
+    acceptsUserRows(unwrapRows(successful))
+  }
+})
+
+users.single().then(result => {
+  acceptsUserRow(unwrapOne(result))
+  acceptsNullableUserRow(unwrapOne(result, { allowNull: true }))
+  acceptsNullableUserRow(unwrap(result, { allowNull: true }))
+})
+
+const countedResult: AthenaResult<UserRow[]> = {
+  data: [{ id: '1', name: 'Alice' }],
+  error: null,
+  status: 200,
+  count: 1,
+  raw: null,
+}
+acceptsNumber(requireAffected(countedResult))
+
+const affectedOptions: RequireAffectedOptions = { min: 2 }
+acceptsNumber(requireAffected(countedResult, affectedOptions))
 
 // @ts-expect-error insert(one) should not be inferred as array result
 acceptsUserArrayPromise(users.insert({ id: "1", name: "Alice" }).select())

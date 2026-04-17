@@ -300,6 +300,152 @@ interface AthenaResult<T> {
 
 ---
 
+## Reliability helpers
+
+The package exports composable utility helpers for result handling, coercion, retry, and normalized errors.
+
+### isOk
+
+```ts
+isOk<T>(result: AthenaResult<T>): boolean
+```
+
+Returns `true` when `result.error === null` and the status is `2xx`.
+
+### unwrapRows
+
+```ts
+unwrapRows<T>(
+  result: AthenaResult<T[] | T | null>,
+  options?: { context?: AthenaOperationContext; allowNull?: boolean },
+): T[]
+```
+
+Throws on failed result. Normalizes `null` to `[]` and scalar payloads to `[payload]`.
+
+### unwrap
+
+```ts
+unwrap<T>(result: AthenaResult<T | null>): T
+unwrap<T>(result: AthenaResult<T | null>, options: { allowNull: true }): T | null
+```
+
+Throws on failed result. Throws on `null` unless `allowNull: true` is set.
+
+### unwrapOne
+
+```ts
+unwrapOne<T>(result: AthenaResult<T[] | T | null>): T
+unwrapOne<T>(
+  result: AthenaResult<T[] | T | null>,
+  options: { allowNull: true; requireExactlyOne?: boolean },
+): T | null
+```
+
+Returns first row from a successful result. Can enforce exact cardinality with `requireExactlyOne`.
+
+### requireSuccess
+
+```ts
+requireSuccess<T>(
+  result: AthenaResult<T>,
+  context?: AthenaOperationContext,
+): AthenaResult<T>
+```
+
+Asserts success and returns the original result for chaining; throws `AthenaGatewayError` when not successful.
+
+### requireAffected
+
+```ts
+requireAffected<T>(
+  result: AthenaResult<T>,
+  options?: { min?: number },
+  context?: AthenaOperationContext,
+): number
+```
+
+Enforces affected-row guarantees for write paths. Requires `result.count` and validates against `min` (default `1`).
+
+### normalizeAthenaError
+
+```ts
+type AthenaErrorKind =
+  | "unique_violation"
+  | "not_found"
+  | "validation"
+  | "auth"
+  | "rate_limit"
+  | "transient"
+  | "unknown"
+
+type NormalizedAthenaError = {
+  kind: AthenaErrorKind
+  status?: number
+  constraint?: string
+  table?: string
+  operation?: string
+  message: string
+  raw: unknown
+}
+
+normalizeAthenaError(
+  resultOrError: unknown,
+  context?: AthenaOperationContext,
+): NormalizedAthenaError
+```
+
+Converts heterogeneous Athena errors/results into a stable, typed classification shape.
+
+### coerceInt and assertInt
+
+```ts
+coerceInt(
+  value: unknown,
+  options?: { strictBigInt?: boolean; min?: number; max?: number },
+): number | null
+
+assertInt(
+  value: unknown,
+  label?: string,
+  options?: { strictBigInt?: boolean; min?: number; max?: number },
+): number
+```
+
+`coerceInt` returns `null` for invalid values; `assertInt` throws when coercion fails.
+
+### withRetry
+
+```ts
+withRetry<T>(
+  config: {
+    retries: number
+    baseDelayMs?: number
+    maxDelayMs?: number
+    backoff?: "linear" | "exponential" | ((attempt: number, error: unknown) => number)
+    jitter?: boolean | number
+    shouldRetry?: (error: unknown, attempt: number) => boolean | Promise<boolean>
+  },
+  fn: () => Promise<T>,
+): Promise<T>
+```
+
+Retries transient/rate-limit failures by default. Use `shouldRetry` for explicit custom retry policy.
+
+### AthenaOperationContext
+
+```ts
+type AthenaOperationContext = {
+  table?: string
+  operation?: string
+  identity?: string | Record<string, unknown>
+}
+```
+
+Attach context to helper-thrown errors for clearer logs and diagnostics.
+
+---
+
 ## useAthenaGateway
 
 ```ts

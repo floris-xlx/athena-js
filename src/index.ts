@@ -9,6 +9,18 @@
 export { createClient, AthenaClient } from "./client.js";
 export { Backend } from "./gateway/types.js";
 export { AthenaGatewayError, isAthenaGatewayError } from "./gateway/errors.ts";
+export {
+  isOk,
+  unwrap,
+  unwrapRows,
+  unwrapOne,
+  requireSuccess,
+  requireAffected,
+  normalizeAthenaError,
+  coerceInt,
+  assertInt,
+  withRetry,
+} from './auxiliaries.js'
 export type {
   RpcQueryBuilder,
   RpcOrderOptions,
@@ -16,6 +28,17 @@ export type {
   TableQueryBuilder,
   AthenaResult,
 } from "./client.js";
+export type {
+  AthenaErrorKind,
+  AthenaOperationContext,
+  NormalizedAthenaError,
+  UnwrapOptions,
+  UnwrapOneOptions,
+  RequireAffectedOptions,
+  IntCoercionOptions,
+  RetryConfig,
+  RetryBackoffStrategy,
+} from './auxiliaries.js'
 export type {
   AthenaRpcCallOptions,
   AthenaRpcFilter,
