@@ -92,8 +92,13 @@ The suite demonstrates:
 These examples are validated by:
 
 ```bash
-node --import tsx --test test/generator-full-utilization.e2e.test.ts
+pnpm test:e2e:generator
 ```
+
+This runs both generator suites:
+
+- `test/generator-full-utilization.e2e.test.ts`
+- `test/generator-feature-matrix.e2e.test.ts`
 
 ## Error response shape
 

@@ -34,7 +34,10 @@ Exported helpers include:
 
 ## Validation
 
-These examples are exercised by `test-sdk/test/generator-full-utilization.e2e.test.ts`.
+These examples are exercised by:
+
+- `test-sdk/test/generator-full-utilization.e2e.test.ts`
+- `test-sdk/test/generator-feature-matrix.e2e.test.ts`
 
 Run from `test-sdk`:
 
