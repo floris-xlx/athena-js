@@ -1,5 +1,5 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import type {
+  AnyModelDef,
   DatabaseDef,
   ModelDef,
   ModelMetadata,
@@ -7,6 +7,9 @@ import type {
   SchemaDef,
 } from './types.ts'
 
+/**
+ * Declares a model contract with explicit metadata and typed row/insert/update shapes.
+ */
 export function defineModel<
   Row,
   Insert = Partial<Row>,
@@ -16,20 +19,30 @@ export function defineModel<
   return input
 }
 
+/**
+ * Declares a schema-level model map.
+ */
 export function defineSchema<
-  Models extends Record<string, ModelDef<any, any, any, ModelMetadata<any>>>,
+  Models extends Record<string, AnyModelDef>,
 >(models: Models): SchemaDef<Models> {
   return { models }
 }
 
+/**
+ * Declares a database-level schema map.
+ */
 export function defineDatabase<
-  Schemas extends Record<string, SchemaDef<Record<string, ModelDef<any, any, any, ModelMetadata<any>>>>>,
+  Schemas extends Record<string, SchemaDef<Record<string, AnyModelDef>>>,
 >(schemas: Schemas): DatabaseDef<Schemas> {
   return { schemas }
 }
 
+/**
+ * Declares a top-level multi-database registry.
+ */
 export function defineRegistry<
-  Databases extends Record<string, DatabaseDef<Record<string, SchemaDef<Record<string, ModelDef<any, any, any, ModelMetadata<any>>>>>>>,
+  Databases extends Record<string, DatabaseDef<Record<string, SchemaDef<Record<string, AnyModelDef>>>>>,
 >(databases: Databases): RegistryDef<Databases> {
   return databases
 }
+

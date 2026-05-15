@@ -83,3 +83,22 @@ test('query fallback does not rewrite complex select SQL expressions with commas
     restore()
   }
 })
+
+test('query fallback auto-quotes simple aliased identifiers', async () => {
+  const { calls, restore } = mockFetch()
+  try {
+    await client
+      .from('public.type_lab')
+      .eqCast('id', '550e8400-e29b-41d4-a716-446655440000', 'uuid')
+      .select('table as table_alias, public.type_lab.order AS order_alias')
+
+    const payload = JSON.parse(calls[0].init?.body as string)
+    assert.ok(
+      payload.query.includes(
+        'SELECT "table" AS "table_alias", "public"."type_lab"."order" AS "order_alias" FROM "public"."type_lab"',
+      ),
+    )
+  } finally {
+    restore()
+  }
+})
