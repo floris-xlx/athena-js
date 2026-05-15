@@ -32,6 +32,6 @@ GeneratorCore ..> DefineRegistry : generated registry source
 note right of ProviderInterface
 Provider contracts power both
 runtime typed clients and phase-2 generator
-scaffolding.
+pipelines (direct pg_url + gateway-query).
 end note
 @enduml

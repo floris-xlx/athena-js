@@ -1,5 +1,18 @@
+import { createClient, type AthenaSdkClient } from '../client.ts'
+import {
+  buildGatewayCatalogQueries,
+  PostgresCatalogSnapshotAssembler,
+  type ColumnQueryRow,
+  type EnumQueryRow,
+  type ForeignKeyQueryRow,
+  type PrimaryKeyQueryRow,
+} from '../schema/postgres-introspection-core.ts'
 import { createPostgresIntrospectionProvider } from '../schema/postgres-provider.ts'
-import type { IntrospectionSnapshot, SchemaIntrospectionProvider } from '../schema/types.ts'
+import type {
+  IntrospectionInspectOptions,
+  IntrospectionSnapshot,
+  SchemaIntrospectionProvider,
+} from '../schema/types.ts'
 import type {
   GeneratorExperimentalFlags,
   GeneratorProviderConfig,
@@ -8,15 +21,84 @@ import type {
   ScyllaDirectProviderConfig,
 } from './types.ts'
 
+class AthenaGatewayCatalogClient {
+  constructor(private readonly client: AthenaSdkClient) {}
+
+  async queryRows<T extends Record<string, unknown>>(query: string): Promise<T[]> {
+    const result = await this.client.query<T>(query)
+    if (result.error || result.status < 200 || result.status >= 300) {
+      throw new Error(result.error ?? `Gateway query failed with status ${result.status}`)
+    }
+    return result.data ?? []
+  }
+
+  async queryColumns(query: string): Promise<ColumnQueryRow[]> {
+    return this.queryRows<ColumnQueryRow>(query)
+  }
+
+  async queryEnums(query: string): Promise<Map<number, string[]>> {
+    const rows = await this.queryRows<EnumQueryRow>(query)
+    const enumMap = new Map<number, string[]>()
+    for (const row of rows) {
+      const existing = enumMap.get(row.type_oid) ?? []
+      existing.push(row.enum_label)
+      enumMap.set(row.type_oid, existing)
+    }
+    return enumMap
+  }
+
+  async queryPrimaryKeys(query: string): Promise<PrimaryKeyQueryRow[]> {
+    return this.queryRows<PrimaryKeyQueryRow>(query)
+  }
+
+  async queryForeignKeys(query: string): Promise<ForeignKeyQueryRow[]> {
+    return this.queryRows<ForeignKeyQueryRow>(query)
+  }
+}
+
 class AthenaGatewayPostgresIntrospectionProvider implements SchemaIntrospectionProvider {
   readonly backend = 'postgresql' as const
 
-  constructor(private readonly config: PostgresGatewayProviderConfig) {}
+  private readonly client: AthenaSdkClient
 
-  async inspect(): Promise<IntrospectionSnapshot> {
-    throw new Error(
-      `Postgres gateway introspection is not implemented yet for ${this.config.gatewayUrl}. Use mode=direct for now.`,
-    )
+  constructor(private readonly config: PostgresGatewayProviderConfig) {
+    this.client = createClient(this.config.gatewayUrl, this.config.apiKey, {
+      backend: {
+        type: this.config.backend ?? 'postgresql',
+      },
+    })
+  }
+
+  async inspect(options?: IntrospectionInspectOptions): Promise<IntrospectionSnapshot> {
+    const schemas =
+      options?.schemas && options.schemas.length > 0
+        ? options.schemas
+        : this.config.schemas && this.config.schemas.length > 0
+          ? this.config.schemas
+          : ['public']
+
+    const catalogClient = new AthenaGatewayCatalogClient(this.client)
+    const queries = buildGatewayCatalogQueries(schemas)
+
+    const [columnRows, enumMap, primaryKeyRows, foreignKeyRows] = await Promise.all([
+      catalogClient.queryColumns(queries.columns),
+      catalogClient.queryEnums(queries.enums),
+      catalogClient.queryPrimaryKeys(queries.primaryKeys),
+      catalogClient.queryForeignKeys(queries.foreignKeys),
+    ])
+
+    const assembler = new PostgresCatalogSnapshotAssembler()
+    assembler.addColumnRows(columnRows, enumMap)
+    assembler.addPrimaryKeyRows(primaryKeyRows)
+    assembler.addForeignKeyRows(foreignKeyRows)
+    assembler.addManyToManyRows(foreignKeyRows)
+
+    return {
+      backend: 'postgresql',
+      database: this.config.database,
+      generatedAt: new Date().toISOString(),
+      schemas: assembler.toSchemas(),
+    }
   }
 }
 
@@ -51,11 +133,6 @@ export function resolveGeneratorProvider(
   }
 
   if (providerConfig.kind === 'postgres' && providerConfig.mode === 'gateway') {
-    if (!experimentalFlags.postgresGatewayIntrospection) {
-      throw new Error(
-        'Postgres gateway introspection is experimental. Set experimental.postgresGatewayIntrospection=true to opt in.',
-      )
-    }
     return new AthenaGatewayPostgresIntrospectionProvider(providerConfig)
   }
 

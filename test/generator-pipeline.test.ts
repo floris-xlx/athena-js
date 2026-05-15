@@ -56,6 +56,86 @@ function createSnapshotProvider(): SchemaIntrospectionProvider {
   }
 }
 
+function createGatewayFetchMock() {
+  const calls: Array<{ url: string; method: string; query: string }> = []
+  const original = globalThis.fetch
+
+  globalThis.fetch = async (url, init) => {
+    const payload = JSON.parse(String(init?.body ?? '{}')) as { query: string }
+    calls.push({
+      url: String(url),
+      method: String(init?.method ?? 'GET'),
+      query: payload.query,
+    })
+
+    if (payload.query.includes('FROM pg_attribute')) {
+      return new Response(
+        JSON.stringify({
+          data: [
+            {
+              schema_name: 'public',
+              table_name: 'users',
+              column_name: 'id',
+              data_type: 'uuid',
+              udt_name: 'uuid',
+              type_kind_code: 'b',
+              type_oid: 1,
+              is_nullable: false,
+              has_default: false,
+              is_generated: false,
+              array_dimensions: 0,
+            },
+            {
+              schema_name: 'public',
+              table_name: 'users',
+              column_name: 'email',
+              data_type: 'text',
+              udt_name: 'text',
+              type_kind_code: 'b',
+              type_oid: 2,
+              is_nullable: false,
+              has_default: false,
+              is_generated: false,
+              array_dimensions: 0,
+            },
+          ],
+          error: null,
+          status: 200,
+        }),
+        { status: 200 },
+      )
+    }
+
+    if (payload.query.includes('FROM pg_type t') && payload.query.includes('JOIN pg_enum')) {
+      return new Response(JSON.stringify({ data: [], error: null, status: 200 }), { status: 200 })
+    }
+
+    if (payload.query.includes("WHERE con.contype = 'p'")) {
+      return new Response(
+        JSON.stringify({
+          data: [{ schema_name: 'public', table_name: 'users', columns: ['id'] }],
+          error: null,
+          status: 200,
+        }),
+        { status: 200 },
+      )
+    }
+
+    if (payload.query.includes("WHERE con.contype = 'f'")) {
+      return new Response(JSON.stringify({ data: [], error: null, status: 200 }), { status: 200 })
+    }
+
+    return new Response(JSON.stringify({ error: 'Unexpected SQL' }), { status: 400 })
+  }
+
+  return {
+    calls,
+    restore() {
+      globalThis.fetch = original
+    },
+  }
+}
+
 test('runSchemaGenerator loads athena.config.ts and writes generated artifacts', async () => {
   const root = mkdtempSync(join(tmpdir(), 'athena-generator-run-'))
   try {
@@ -96,6 +176,55 @@ test('runSchemaGenerator loads athena.config.ts and writes generated artifacts',
     assert.equal(content.includes('export interface PublicUsersRow'), true)
     assert.equal(content.includes('email: string'), true)
   } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('runSchemaGenerator can operate in gateway-only mode without direct pg_url access', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'athena-generator-gateway-run-'))
+  const { calls, restore } = createGatewayFetchMock()
+
+  try {
+    writeFileSync(
+      join(root, 'athena.config.ts'),
+      `
+      export default {
+        provider: {
+          kind: 'postgres',
+          mode: 'gateway',
+          gatewayUrl: 'https://athena-db.com',
+          apiKey: 'secret',
+          database: 'phase_two',
+          schemas: ['public'],
+        },
+        experimental: {
+          postgresGatewayIntrospection: true,
+        },
+        output: {
+          targets: {
+            model: 'src/generated/{database_kebab}/{schema_kebab}/{model_kebab}.model.ts',
+            schema: 'src/generated/{database_kebab}/{schema_kebab}/index.ts',
+            database: 'src/generated/{database_kebab}/index.ts',
+            registry: 'src/generated/index.ts',
+          },
+        },
+      }
+      `,
+      'utf8',
+    )
+
+    const result = await runSchemaGenerator({ cwd: root })
+    assert.equal(result.files.length, 4)
+    assert.equal(result.writtenFiles.length, 4)
+    assert.equal(calls.length, 4)
+    assert.equal(calls.every(call => call.url.endsWith('/gateway/query')), true)
+    assert.equal(calls.every(call => call.method === 'POST'), true)
+
+    const modelPath = join(root, 'src', 'generated', 'phase-two', 'public', 'users.model.ts')
+    const content = readFileSync(modelPath, 'utf8')
+    assert.equal(content.includes('export interface PublicUsersRow'), true)
+  } finally {
+    restore()
     rmSync(root, { recursive: true, force: true })
   }
 })

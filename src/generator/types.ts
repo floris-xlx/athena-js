@@ -29,10 +29,17 @@ export interface GeneratorFeatureFlags {
 }
 
 /**
- * Experimental toggles for not-yet-implemented provider modes.
+ * Experimental toggles for optional/forward-compatible generator behavior.
  */
 export interface GeneratorExperimentalFlags {
+  /**
+   * Legacy compatibility toggle from the initial scaffold.
+   * Gateway introspection is now implemented; this flag is retained for additive config compatibility.
+   */
   postgresGatewayIntrospection: boolean
+  /**
+   * Enables contract placeholders for future Scylla provider work.
+   */
   scyllaProviderContracts: boolean
 }
 
@@ -66,7 +73,7 @@ export interface PostgresDirectProviderConfig {
 }
 
 /**
- * Athena gateway-backed PostgreSQL introspection mode (scaffold only).
+ * Athena gateway-backed PostgreSQL introspection mode using `/gateway/query`.
  */
 export interface PostgresGatewayProviderConfig {
   kind: 'postgres'

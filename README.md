@@ -94,8 +94,10 @@ athena-js generate --config ./athena.config.ts
 ```
 
 Generator output paths support placeholder tokens (database/schema/model + case variants), feature flags, and experimental provider contracts.
+PostgreSQL introspection works both via direct `pg_url` and gateway-only `/gateway/query` execution.
 
 For full generator configuration, see [`docs/generator-config.md`](./docs/generator-config.md).
+For prompt-ready documentation handoff text, see [`docs/generator-codex-handoff-prompt-pack.md`](./docs/generator-codex-handoff-prompt-pack.md).
 
 Every query resolves to `{ data, error, errorDetails?, status, count?, raw }`. `data` is `null` on error; `error` is `null` on success.
 

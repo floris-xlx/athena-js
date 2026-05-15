@@ -11,7 +11,7 @@ component "athena-js CLI\n(generate)" as Cli #FFE082
 component "Config Loader\nfind/load/normalize" as ConfigLoader #AED581
 component "Provider Resolver" as ProviderResolver #B3E5FC
 component "Postgres Direct Provider\n(implemented)" as PgDirect #80CBC4
-component "Gateway Postgres Provider\n(experimental contract)" as PgGateway #CFD8DC
+component "Gateway Postgres Provider\n(implemented via /gateway/query)" as PgGateway #80CBC4
 component "Scylla Provider\n(contract placeholder)" as Scylla #CFD8DC
 component "Introspection Snapshot" as Snapshot #F8BBD0
 component "Artifact Composer\n(models/schemas/db/registry)" as Composer #D1C4E9
@@ -22,7 +22,7 @@ ConfigFile --> ConfigLoader : typed config object
 Cli --> ConfigLoader
 ConfigLoader --> ProviderResolver : provider + features + naming
 ProviderResolver --> PgDirect : postgres direct mode
-ProviderResolver --> PgGateway : postgres gateway mode (flagged)
+ProviderResolver --> PgGateway : postgres gateway mode
 ProviderResolver --> Scylla : scylla mode (flagged)
 PgDirect --> Snapshot
 PgGateway --> Snapshot
