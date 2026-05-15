@@ -1,28 +1,37 @@
-# Typed schema registry and model-first client usage
+# Typed schema registry and model contracts
 
-The typed layer gives you explicit model contracts while preserving the same runtime API (`from`, `fromModel`, `rpc`, `query`, filters, and mutations).
+The typed layer is the SDK's schema contract system. It keeps model metadata in TypeScript,
+ensures runtime calls line up with table names, and lets the generator emit those same contracts for you.
 
-## Why this exists
+## Why it exists
 
-- stable typing for rows, insert payloads, and update payloads
-- logical model naming that can stay stable while DB names change
-- one place for schema metadata (`primaryKey`, `nullable`, relation hints)
-- generator-to-runtime parity for source-of-truth model contracts
+Use registry models when two things start to become expensive:
 
-## 1) Build model contracts
+- duplicated row types across call sites
+- schema changes causing drift between runtime strings and typed assumptions
+
+The model system reduces both by introducing a source-of-truth object graph:
+`registry -> database -> schema -> model -> metadata/metadata types`.
+
+`createClient(...).from<Table>("table")` remains valid and fully supported. The typed path is additive.
+
+## 1) Core contracts
+
+`defineModel`, `defineSchema`, `defineDatabase`, and `defineRegistry` are lightweight identity builders with explicit type signatures.
 
 ```ts
 import {
-  defineDatabase,
   defineModel,
-  defineRegistry,
   defineSchema,
+  defineDatabase,
+  defineRegistry,
+  createTypedClient,
 } from "@xylex-group/athena";
 
 const users = defineModel<
-  { id: string; email: string; createdAt: string | null }, // Row
-  { id?: string; email: string }, // Insert
-  { email?: string } // Update
+  { id: string; email: string; createdAt: string | null },
+  { id?: string; email: string },
+  { email?: string }
 >({
   meta: {
     primaryKey: ["id"],
@@ -30,29 +39,36 @@ const users = defineModel<
   },
 });
 
-const publicSchema = defineSchema({ users });
-const appDb = defineDatabase({ public: publicSchema });
-const registry = defineRegistry({ primary: appDb });
+const primarySchema = defineSchema({ users });
+const primaryDb = defineDatabase({ public: primarySchema });
+const registry = defineRegistry({ app: primaryDb });
+
+const client = createTypedClient(registry, process.env.ATHENA_URL!, process.env.ATHENA_API_KEY!);
 ```
 
-`defineModel` is a typed identity helper:
+## 2) Model metadata contract
 
-- `Row` is required and drives `select`/query typing.
-- `Insert` defaults to `Partial<Row>` unless provided.
-- `Update` defaults to `Partial<Insert>` unless provided.
-- `meta` stores schema metadata consumed by runtime/table resolution.
-
-### What metadata is expected
+`meta` is where runtime behavior and typed metadata are stored.
 
 - `primaryKey: string[]` (required)
-- `database`, `schema`, `model` (logical names, optional)
-- `tableName` (exact SQL table name override; takes precedence)
-- `nullable` map (`column -> boolean`)
-- `relations` map (from generator, optional)
+- `database`, `schema`, `model`: logical naming hints
+- `tableName`: explicit SQL table target; overrides `schema.model`
+- `nullable`: map used to shape insert/update inference and nullability
+- `relations`: optional relation graph metadata emitted by generator
 
-## 2) Use typed client in place of runtime client
+### `tableName` resolution order
 
-`createTypedClient(registry, url, apiKey, options?)` returns a client compatible with the base `AthenaSdkClient` surface plus typed model lookup helpers:
+`fromModel(database, schema, model)` resolves to:
+
+1. `meta.tableName` when provided
+2. `${meta.schema}.${meta.model}` when missing (defaults from registry path)
+
+This means you can keep model names stable even when DB objects are renamed
+or cross-namespace.
+
+## 3) Client behavior and type coupling
+
+`createTypedClient(registry, url, apiKey, options?)` returns an `AthenaSdkClient` with registry helpers:
 
 - `.registry`
 - `.tenantKeyMap`
@@ -60,67 +76,57 @@ const registry = defineRegistry({ primary: appDb });
 - `.withTenantContext(context)`
 - `.fromModel(database, schema, model)`
 
+`fromModel()` uses registry lookup and then delegates to the same runtime query builder
+so chain methods behave exactly like `from()`.
+
 ```ts
-import {
-  createTypedClient,
-  defineDatabase,
-  defineModel,
-  defineRegistry,
-  defineSchema,
-} from "@xylex-group/athena";
-
-const registry = defineRegistry({
-  primary: defineDatabase({
-    public: defineSchema({
-      users: defineModel<{ id: string; email: string }>({
-        meta: {
-          primaryKey: ["id"],
-          nullable: { id: false, email: false },
-        },
-      }),
-    }),
-  }),
-});
-
-const typed = createTypedClient(registry, "https://athena.example.com", process.env.ATHENA_API_KEY!, {
+const typed = createTypedClient(registry, "https://athena-db.com", "secret", {
   tenantKeyMap: {
     organizationId: "X-Organization-Id",
+    workspaceId: "X-Workspace-Id",
   },
 });
 
-const users = await typed
-  .withTenantContext({ organizationId: "org_123" })
-  .fromModel("primary", "public", "users")
+await typed
+  .withTenantContext({ organizationId: "org-1" })
+  .fromModel("app", "public", "users")
   .select("id, email")
-  .eq("active", true)
-  .limit(20);
+  .eq("active", true);
 ```
 
-`fromModel(database, schema, model)` resolves at runtime by:
+### Tenant context behavior
 
-1. locating model metadata in `registry[database].schemas[schema].models[model]`
-2. using `meta.tableName` when set
-3. else resolving to `<meta.schema ?? schema>.<meta.model ?? model>`
-
-## 3) Tenant context behavior
+- returns a new client
+- merges new keys into existing context
+- maps keys to headers using `tenantKeyMap`
+- drops `null` / `undefined` values instead of serializing them
 
 ```ts
-typed.withTenantContext({
-  organizationId: "org_456",
-  workspaceId: "ws_001",
-});
+const scoped = typed.withTenantContext({ organizationId: "org-1" });
+const scopedAgain = scoped.withTenantContext({ workspaceId: "ws-2" });
+// scopedAgain sends both tenant headers
 ```
 
-Behavior:
+## 4) Types generated from model metadata
 
-- returns a new typed client (immutability)
-- maps tenant keys to headers via `tenantKeyMap`
-- merges those values into request headers on the scoped client
-- ignores missing values (`null` / `undefined`) for a clean header set
+`defineModel<Row, Insert, Update>(...)` influences type extraction:
 
-## 4) Relation metadata
+- `Row` drives read results (`select` payloads)
+- `Insert` defaults to `Partial<Row>`
+- `Update` defaults to `Partial<Insert>`
 
-Generated output can include relation metadata:
+The helper types available at runtime:
+
+- `RowOf<Model>`
+- `InsertOf<Model>`
+- `UpdateOf<Model>`
+- `ModelAt<Registry, DB, Schema, Model>`
+
+If you need explicit override typing for insert/update payloads while still sharing fields, pass the generics directly.
+
+## 5) Relation metadata
+
+Generated models can include relation metadata for tooling that reads it.
 
 ```ts
 type Kind = "one-to-one" | "many-to-one" | "one-to-many" | "many-to-many";
@@ -131,6 +137,7 @@ type Kind = "one-to-one" | "many-to-one" | "one-to-many" | "many-to-many";
   targetSchema: string;
   targetModel: string;
   targetColumns: string[];
+  targetDatabase?: string;
   through?: {
     schema: string;
     model: string;
@@ -140,59 +147,67 @@ type Kind = "one-to-one" | "many-to-one" | "one-to-many" | "many-to-many";
 }
 ```
 
-The SDK currently preserves this metadata for downstream tooling and generator consumers; it does not yet drive query joins automatically.
+The SDK preserves this metadata and forwards it in generated model files. It does not perform automatic join expansion in current query builders.
 
-## 5) Migration strategy: untyped → model-first
+## 6) Error behavior and guardrails
 
-Recommended progression:
+`fromModel` throws early when registry paths are invalid:
 
-1. keep `createClient(...).from("users")` for most code
-2. add typed models for stable domains
-3. migrate call sites one bounded area at a time to `fromModel(...)`
-4. switch source-of-truth to generated contracts once your schema contract is stable
+- missing database -> `Unknown database "..."`
+- missing schema -> `Unknown schema "..." in database "..."`
+- missing model -> `Unknown model "..." in schema "..."`
 
-The runtime surface (`query`, `rpc`, `select`, filters, pagination) remains the same.
+You can rely on constructor-time errors before making HTTP calls.
 
-## 6) Generator coupling
+## 7) Generator interoperability
 
-The generator emits exactly the same primitives and metadata this file documents:
+The generator outputs directly in the same shape:
 
-- per-table model files (`defineModel` + `Row`, `Insert`, `Update`)
-- per-schema files (`defineSchema`)
-- per-database files (`defineDatabase`)
-- optional root registry (`defineRegistry` when `features.emitRegistry` is true)
+- model files: `defineModel<...>` with row/insert/update types + metadata
+- schema files: `defineSchema({ ... })`
+- database files: `defineDatabase({ ... })`
+- optional registry file: `defineRegistry({ ... })`
 
-See [`generator-config.md`](generator-config.md) for provider config, output paths, and feature flags.
+That means `generated registry artifacts` can be imported as-is with `createTypedClient(...)`.
 
-## 7) Troubleshooting typed contracts
+### File template defaults
 
-### Unknown path in `fromModel`
+By default, generator target templates are:
 
-If `fromModel` throws:
+- `src/generated/{database_kebab}/{schema_kebab}/{model_kebab}.model.ts`
+- `src/generated/{database_kebab}/{schema_kebab}/index.ts`
+- `src/generated/{database_kebab}/index.ts`
+- `src/generated/index.ts`
 
-- verify `registry` nesting keys for `database / schema / model`
-- check exact key casing
-- ensure generated file names match placeholder transforms used in your generator config
+These can be changed via `output.targets`.
 
-### Inferred types are too narrow/wide
+## 8) Migration strategy: untyped -> model-first
 
-- inspect `Insert` / `Update` generic arguments in `defineModel`
-- ensure `nullable` reflects DB behavior where applicable
-- keep column keys exactly aligned with DB names (generator handles reserved names safely)
+A practical rollout sequence for existing code:
 
-### Tenant headers not arriving
+1. Keep existing `from("table")` call sites untouched for now.
+2. Add `defineModel` declarations per bounded domain.
+3. Build a local registry from manual contracts.
+4. Move call sites to `fromModel(...)` only where stability gains are high.
+5. Replace manual contracts with generated output once generator config and checks are stable.
 
-- confirm `tenantKeyMap` key-to-header mapping
-- check one request path at a time (`withTenantContext` + one typed query)
-- confirm values are serializable (`string | number | boolean | null | undefined`)
+## 9) Configuration tips for stable generation
 
-## 8) Anti-patterns
+- Keep naming conventions explicit in config (`modelType`, `modelConst`, etc.)
+- Use `emitRelations` only when relation metadata consumers are ready
+- Use `emitRegistry` when your app imports `registry` as the primary source-of-truth; disable in transitional branches if needed
+- Run `athena-js generate --dry-run` in CI to validate output deterministically before writing files
 
-- forcing global `fromModel(...)` migration before contracts are complete
-- mixing generated and handwritten `meta` assumptions in the same feature area
-- manually editing generated registry artifacts without regeneration
+## 10) Common pitfalls
 
-## 9) Next
+- Manual `defineModel` and generated model definitions with the same logical key but different metadata
+- Using raw DB table names in `fromModel` calls; prefer logical model names and set `tableName` only for legacy mapping
+- Assuming relation metadata automatically rewires queries (it is metadata only)
+- Skipping tenant header mapping and setting tenant headers manually in each call
 
-- [`generator-config.md`](generator-config.md) for how contracts are generated
-- [`api-reference.md`](api-reference.md) for full API signatures
+## 11) Next
+
+For concrete CLI/config examples, flags, and provider behavior, continue to:
+
+- [`generator-config.md`](generator-config.md)
+- [`api-reference.md`](api-reference.md)

@@ -1,0 +1,43 @@
+@startuml
+title Athena JS Docs Flow (Before)
+skinparam backgroundColor #FFF5EE
+skinparam componentStyle rectangle
+skinparam ArrowColor #6D4C41
+skinparam defaultFontName Consolas
+
+actor "Developer" as Dev #B3E5FC
+component "getting-started.md" as GS #FFE082
+component "typed-schema-registry.md" as TSR #FFF59D
+component "api-reference.md" as AR #A5D6A7
+component "generator-codex-handoff-prompt-pack.md" as Pack #CE93D8
+
+node "SDK Runtime" as Runtime #80CBC4
+node "Runtime APIs" as RuntimeAPIs #81D4FA
+node "Generator APIs" as Generator #FFCC80
+node "Typed Registry APIs" as Typed #C5E1A5
+
+rectangle "Docs discovery for new users" as DocsFlow #FFF9C4
+
+Dev --> GS : reads as first doc
+GS --> AR : jumps for method details
+GS --> TSR : jumps for typed contracts
+TSR ..> AR : duplicates API snippets
+GS --> Pack : ad hoc migration notes
+AR --> Generator : mixed generator + runtime examples
+Generator ..> RuntimeAPIs : partial mapping`r`n
+note right of TSR
+Model docs and runtime docs are mixed.
+No single migration map.
+Scattered details and duplicate phrasing.
+end note
+
+note right of AR
+Generator setup details overlap with
+runtime API sections and generator docs.
+end note
+
+DocsFlow --> Dev : unclear first page
+
+@enduml
+
+

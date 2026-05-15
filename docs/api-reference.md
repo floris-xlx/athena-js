@@ -651,3 +651,45 @@ pnpm check:all
 ```
 
 Use these after large API-level updates or generated contract changes.
+## Generator configuration quick reference (from docs/generator-config.md)
+
+### Defaults recap
+
+- `provider` has no runtime default and must be configured.
+- output targets:
+  - `model`: `src/generated/{database_kebab}/{schema_kebab}/{model_kebab}.model.ts`
+  - `schema`: `src/generated/{database_kebab}/{schema_kebab}/index.ts`
+  - `database`: `src/generated/{database_kebab}/index.ts`
+  - `registry`: `src/generated/index.ts`
+- naming:
+  - `modelType: "pascal"`
+  - `modelConst: "camel"`
+  - `schemaConst: "camel"`
+  - `databaseConst: "camel"`
+  - `registryConst: "camel"`
+- feature flags:
+  - `emitRelations: true`
+  - `emitRegistry: true`
+- experimental:
+  - `postgresGatewayIntrospection: false`
+  - `scyllaProviderContracts: true`
+
+### Config discovery
+
+Generator config discovery checks in order:
+
+1. `athena.config.ts`
+2. `athena.config.js`
+3. `athena-js.config.ts`
+4. `athena-js.config.js`
+5. `.athena.config.ts`
+6. `.athena.config.js`
+
+### Command line usage
+
+- `athena-js generate`
+- `athena-js generate --dry-run`
+- `athena-js generate --config ./path/to/config`
+
+If you need concrete examples and troubleshooting scenarios, use the full
+[`generator-config.md`](generator-config.md) page.

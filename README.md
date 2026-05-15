@@ -664,5 +664,8 @@ CI and publish workflows run `typecheck` before build/publish.
 
 ## Learn more
 
+- [Documentation index](docs/index.md) — complete documentation map
 - [Getting started](docs/getting-started.md) — step-by-step walkthrough
+- [Typed schema registry](docs/typed-schema-registry.md) — typed contracts and migration path
+- [Generator config](docs/generator-config.md) — generator provider and output pipeline
 - [API reference](docs/api-reference.md) — complete method and type reference
