@@ -1,0 +1,37 @@
+@startuml
+title Generator Runtime (After)
+skinparam backgroundColor #F3F8FF
+skinparam componentStyle rectangle
+skinparam ArrowColor #263238
+skinparam defaultFontName Consolas
+
+actor "SDK Consumer" as Consumer #B2EBF2
+file "athena.config.ts\n(project root)" as ConfigFile #FFF59D
+component "athena-js CLI\n(generate)" as Cli #FFE082
+component "Config Loader\nfind/load/normalize" as ConfigLoader #AED581
+component "Provider Resolver" as ProviderResolver #B3E5FC
+component "Postgres Direct Provider\n(implemented)" as PgDirect #80CBC4
+component "Gateway Postgres Provider\n(experimental contract)" as PgGateway #CFD8DC
+component "Scylla Provider\n(contract placeholder)" as Scylla #CFD8DC
+component "Introspection Snapshot" as Snapshot #F8BBD0
+component "Artifact Composer\n(models/schemas/db/registry)" as Composer #D1C4E9
+folder "Generated Files" as Output #C8E6C9
+
+Consumer --> Cli : "athena-js generate"
+ConfigFile --> ConfigLoader : typed config object
+Cli --> ConfigLoader
+ConfigLoader --> ProviderResolver : provider + features + naming
+ProviderResolver --> PgDirect : postgres direct mode
+ProviderResolver --> PgGateway : postgres gateway mode (flagged)
+ProviderResolver --> Scylla : scylla mode (flagged)
+PgDirect --> Snapshot
+PgGateway --> Snapshot
+Scylla --> Snapshot
+Snapshot --> Composer
+Composer --> Output : placeholder path templates
+
+note right of Composer
+Safe naming + reserved identifier handling
+for generated TypeScript row fields.
+end note
+@enduml

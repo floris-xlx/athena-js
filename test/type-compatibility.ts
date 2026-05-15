@@ -1,6 +1,7 @@
 import {
   createTypedClient,
   createClient,
+  defineGeneratorConfig,
   defineDatabase,
   defineModel,
   defineRegistry,
@@ -242,3 +243,54 @@ typedClient.fromModel('primary', 'public', 'missing_table').select()
 
 // @ts-expect-error unknown tenant key should not type-check
 typedClient.withTenantContext({ unknown: 'value' })
+
+const generatorConfig = defineGeneratorConfig({
+  provider: {
+    kind: 'postgres',
+    mode: 'direct',
+    connectionString: 'postgres://postgres:postgres@127.0.0.1:5432/app_db',
+    database: 'app_db',
+  },
+  output: {
+    targets: {
+      model: 'src/generated/{database_kebab}/{schema_kebab}/{model_kebab}.model.ts',
+      schema: 'src/generated/{database_kebab}/{schema_kebab}/index.ts',
+      database: 'src/generated/{database_kebab}/index.ts',
+      registry: 'src/generated/index.ts',
+    },
+    placeholderMap: {
+      namespace: '{database_kebab}/{schema_kebab}',
+    },
+  },
+  naming: {
+    modelType: 'pascal',
+    modelConst: 'camel',
+    schemaConst: 'camel',
+    databaseConst: 'camel',
+    registryConst: 'camel',
+  },
+})
+
+declare function acceptsPostgresProviderKind(value: 'postgres'): void
+acceptsPostgresProviderKind(generatorConfig.provider.kind)
+
+defineGeneratorConfig({
+  provider: {
+    kind: 'postgres',
+    mode: 'direct',
+    connectionString: 'postgres://postgres:postgres@127.0.0.1:5432/app_db',
+  },
+  output: {
+    targets: {
+      model: 'src/generated/{database_kebab}/{schema_kebab}/{model_kebab}.model.ts',
+      schema: 'src/generated/{database_kebab}/{schema_kebab}/index.ts',
+      database: 'src/generated/{database_kebab}/index.ts',
+      registry: 'src/generated/index.ts',
+    },
+    placeholderMap: {},
+  },
+  naming: {
+    // @ts-expect-error naming style must be one of preserve/camel/pascal/snake/kebab
+    modelType: 'invalid-style',
+  },
+})

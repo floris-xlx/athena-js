@@ -83,6 +83,20 @@ await typed
 
 For full details, see [`docs/typed-schema-registry.md`](./docs/typed-schema-registry.md).
 
+### Typed schema generator (phase 2 scaffolding)
+
+The SDK now includes a project-root generator config system (`athena.config.ts`) and CLI command:
+
+```bash
+athena-js generate
+athena-js generate --dry-run
+athena-js generate --config ./athena.config.ts
+```
+
+Generator output paths support placeholder tokens (database/schema/model + case variants), feature flags, and experimental provider contracts.
+
+For full generator configuration, see [`docs/generator-config.md`](./docs/generator-config.md).
+
 Every query resolves to `{ data, error, errorDetails?, status, count?, raw }`. `data` is `null` on error; `error` is `null` on success.
 
 For richer handling, inspect `errorDetails` (`code`, `status`, `endpoint`, `method`, `requestId`, etc.) or use `AthenaGatewayError` / `isAthenaGatewayError` from the package exports.

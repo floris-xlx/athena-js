@@ -15,6 +15,7 @@ component "SchemaIntrospectionProvider\n(interface)" as ProviderInterface #B3E5F
 component "PostgresIntrospectionProvider" as PostgresProvider #80CBC4
 database "PostgreSQL" as Postgres #90A4AE
 component "IntrospectionSnapshot" as Snapshot #F8BBD0
+component "Generator Core\n(config + renderer)" as GeneratorCore #CE93D8
 
 Consumer --> DefineModel : Row/Insert/Update + metadata
 DefineModel --> DefineSchema
@@ -25,10 +26,12 @@ DefineRegistry --> TypedClient : typed fromModel(...)
 ProviderInterface <|.. PostgresProvider
 PostgresProvider --> Postgres : catalog queries
 PostgresProvider --> Snapshot : normalized output
-Snapshot ..> DefineRegistry : future generator input
+Snapshot --> GeneratorCore : model/schema/db artifacts
+GeneratorCore ..> DefineRegistry : generated registry source
 
 note right of ProviderInterface
-Provider contracts are in place now.
-Generator implementations are phase 2.
+Provider contracts power both
+runtime typed clients and phase-2 generator
+scaffolding.
 end note
 @enduml

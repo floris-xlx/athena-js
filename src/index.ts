@@ -34,6 +34,16 @@ export {
   defineSchema,
   createPostgresIntrospectionProvider,
 } from './schema/index.ts'
+export {
+  defineGeneratorConfig,
+  findGeneratorConfigPath,
+  loadGeneratorConfig,
+  normalizeGeneratorConfig,
+  generateArtifactsFromSnapshot,
+  resolvePostgresColumnType,
+  resolveGeneratorProvider,
+  runSchemaGenerator,
+} from './generator/index.ts'
 export type {
   RpcQueryBuilder,
   RpcOrderOptions,
@@ -79,6 +89,24 @@ export type {
   TypedClientOptions,
   UpdateOf,
 } from './schema/index.ts'
+export type {
+  AthenaGeneratorConfig,
+  GeneratedArtifact,
+  GeneratedArtifacts,
+  GeneratorArtifactKind,
+  GeneratorExperimentalFlags,
+  GeneratorFeatureFlags,
+  GeneratorNamingConfig,
+  GeneratorOutputConfig,
+  GeneratorOutputTargets,
+  GeneratorProviderConfig,
+  LoadGeneratorConfigOptions,
+  LoadedGeneratorConfig,
+  NamingStyle,
+  NormalizedAthenaGeneratorConfig,
+  RunGeneratorOptions,
+  RunGeneratorResult,
+} from './generator/index.ts'
 export type {
   AthenaConditionCastType,
   AthenaRpcCallOptions,
