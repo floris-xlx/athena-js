@@ -20,7 +20,30 @@ export {
   coerceInt,
   assertInt,
   withRetry,
+  AthenaError,
+  AthenaErrorCode,
+  AthenaErrorKind,
+  AthenaErrorCategory,
 } from './auxiliaries.js'
+export { identifier } from './sql-identifiers.ts'
+export {
+  createTypedClient,
+  defineDatabase,
+  defineModel,
+  defineRegistry,
+  defineSchema,
+  createPostgresIntrospectionProvider,
+} from './schema/index.ts'
+export {
+  defineGeneratorConfig,
+  findGeneratorConfigPath,
+  loadGeneratorConfig,
+  normalizeGeneratorConfig,
+  generateArtifactsFromSnapshot,
+  resolvePostgresColumnType,
+  resolveGeneratorProvider,
+  runSchemaGenerator,
+} from './generator/index.ts'
 export type {
   RpcQueryBuilder,
   RpcOrderOptions,
@@ -29,7 +52,7 @@ export type {
   AthenaResult,
 } from "./client.js";
 export type {
-  AthenaErrorKind,
+  AthenaErrorInput,
   AthenaOperationContext,
   NormalizedAthenaError,
   UnwrapOptions,
@@ -39,6 +62,51 @@ export type {
   RetryConfig,
   RetryBackoffStrategy,
 } from './auxiliaries.js'
+export type {
+  DatabaseDef,
+  InsertOf,
+  IntrospectionColumn,
+  IntrospectionInspectOptions,
+  IntrospectionRelation,
+  IntrospectionSchema,
+  IntrospectionSnapshot,
+  IntrospectionTable,
+  IntrospectionTypeKind,
+  ModelAt,
+  ModelDef,
+  ModelMetadata,
+  ModelRelationKind,
+  ModelRelationMetadata,
+  PostgresIntrospectionProviderOptions,
+  RegistryDef,
+  RowOf,
+  SchemaDef,
+  SchemaIntrospectionProvider,
+  TenantContext,
+  TenantContextValue,
+  TenantKeyMap,
+  TypedAthenaClient,
+  TypedClientOptions,
+  UpdateOf,
+} from './schema/index.ts'
+export type {
+  AthenaGeneratorConfig,
+  GeneratedArtifact,
+  GeneratedArtifacts,
+  GeneratorArtifactKind,
+  GeneratorExperimentalFlags,
+  GeneratorFeatureFlags,
+  GeneratorNamingConfig,
+  GeneratorOutputConfig,
+  GeneratorOutputTargets,
+  GeneratorProviderConfig,
+  LoadGeneratorConfigOptions,
+  LoadedGeneratorConfig,
+  NamingStyle,
+  NormalizedAthenaGeneratorConfig,
+  RunGeneratorOptions,
+  RunGeneratorResult,
+} from './generator/index.ts'
 export type {
   AthenaConditionCastType,
   AthenaRpcCallOptions,

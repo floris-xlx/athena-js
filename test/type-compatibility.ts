@@ -1,5 +1,11 @@
 import {
+  createTypedClient,
   createClient,
+  defineGeneratorConfig,
+  defineDatabase,
+  defineModel,
+  defineRegistry,
+  defineSchema,
   isOk,
   requireAffected,
   requireSuccess,
@@ -38,6 +44,7 @@ declare function acceptsUserRow(value: UserRow): void
 declare function acceptsUserRows(value: UserRow[]): void
 declare function acceptsNullableUserRow(value: UserRow | null): void
 declare function acceptsNumber(value: number): void
+declare function acceptsString(value: string): void
 
 declare function acceptsUserInsertMutation(
   value: PromiseLike<AthenaResult<UserRow>>,
@@ -175,3 +182,115 @@ const stateAdapter: AthenaStateAdapter = {
   onMutationUpdated: () => undefined,
 }
 acceptsAthenaStateAdapter(stateAdapter)
+
+interface OrganizationRow {
+  id: string
+  slug: string
+  owner_user_id: string
+}
+
+const typedRegistry = defineRegistry({
+  primary: defineDatabase({
+    public: defineSchema({
+      organizations: defineModel<
+        OrganizationRow,
+        Pick<OrganizationRow, 'slug' | 'owner_user_id'>,
+        Partial<Pick<OrganizationRow, 'slug' | 'owner_user_id'>>
+      >({
+        meta: {
+          database: 'primary',
+          schema: 'public',
+          model: 'organizations',
+          primaryKey: ['id'],
+          nullable: {
+            id: false,
+            slug: false,
+            owner_user_id: false,
+          },
+          relations: {
+            owner: {
+              kind: 'many-to-one',
+              sourceColumns: ['owner_user_id'],
+              targetSchema: 'public',
+              targetModel: 'users',
+              targetColumns: ['id'],
+            },
+          },
+        },
+      }),
+    }),
+  }),
+})
+
+const typedClient = createTypedClient(typedRegistry, 'https://athena-db.com', 'api-key', {
+  tenantKeyMap: {
+    organizationId: 'X-Organization-Id',
+  },
+})
+
+typedClient
+  .withTenantContext({ organizationId: 'org_1' })
+  .fromModel('primary', 'public', 'organizations')
+  .select()
+  .then(result => {
+    if (result.data && result.data.length > 0) {
+      acceptsString(result.data[0].slug)
+    }
+  })
+
+// @ts-expect-error unknown model key should not type-check
+typedClient.fromModel('primary', 'public', 'missing_table').select()
+
+// @ts-expect-error unknown tenant key should not type-check
+typedClient.withTenantContext({ unknown: 'value' })
+
+const generatorConfig = defineGeneratorConfig({
+  provider: {
+    kind: 'postgres',
+    mode: 'direct',
+    connectionString: 'postgres://postgres:postgres@127.0.0.1:5432/app_db',
+    database: 'app_db',
+  },
+  output: {
+    targets: {
+      model: 'src/generated/{database_kebab}/{schema_kebab}/{model_kebab}.model.ts',
+      schema: 'src/generated/{database_kebab}/{schema_kebab}/index.ts',
+      database: 'src/generated/{database_kebab}/index.ts',
+      registry: 'src/generated/index.ts',
+    },
+    placeholderMap: {
+      namespace: '{database_kebab}/{schema_kebab}',
+    },
+  },
+  naming: {
+    modelType: 'pascal',
+    modelConst: 'camel',
+    schemaConst: 'camel',
+    databaseConst: 'camel',
+    registryConst: 'camel',
+  },
+})
+
+declare function acceptsPostgresProviderKind(value: 'postgres'): void
+acceptsPostgresProviderKind(generatorConfig.provider.kind)
+
+defineGeneratorConfig({
+  provider: {
+    kind: 'postgres',
+    mode: 'direct',
+    connectionString: 'postgres://postgres:postgres@127.0.0.1:5432/app_db',
+  },
+  output: {
+    targets: {
+      model: 'src/generated/{database_kebab}/{schema_kebab}/{model_kebab}.model.ts',
+      schema: 'src/generated/{database_kebab}/{schema_kebab}/index.ts',
+      database: 'src/generated/{database_kebab}/index.ts',
+      registry: 'src/generated/index.ts',
+    },
+    placeholderMap: {},
+  },
+  naming: {
+    // @ts-expect-error naming style must be one of preserve/camel/pascal/snake/kebab
+    modelType: 'invalid-style',
+  },
+})

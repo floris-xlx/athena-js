@@ -1,0 +1,56 @@
+@startuml
+title Athena JS Docs Flow (After)
+skinparam backgroundColor #F3F9FF
+skinparam componentStyle rectangle
+skinparam ArrowColor #1B5E20
+skinparam defaultFontName Consolas
+
+actor "Developer" as Dev #B3E5FC
+card "docs/index.md" as Index #FFF59D
+component "getting-started.md" as GS #FFE082
+component "typed-schema-registry.md" as TSR #FFF59D
+component "generator-config.md" as GC #A5D6A7
+component "api-reference.md" as AR #C5E1A5
+component "generator-codex-handoff-prompt-pack.md" as Pack #CE93D8
+
+node "Runtime APIs" as RuntimeAPIs #80CBC4
+node "Typed Registry APIs" as Typed #B2DFDB
+node "Generator APIs" as Generator #FFCC80
+
+rectangle "Docs Navigation" as Flow #FFF9C4
+
+Dev --> Index : starts here
+Index --> GS : untyped + minimal typed migration path
+GS --> AR : details -> reference
+Index --> TSR : model-first and tenant context
+GS --> GC : generate path and CLI usage
+TSR --> Generator : consumes generated outputs
+TSR --> Typed : stable type + metadata contracts
+GC --> Generator : provider + output pipeline
+AR --> RuntimeAPIs : exhaustive runtime contract
+AR --> Typed : typed surface contract
+AR --> Generator : helper exports
+Pack --> Dev : optional handoff prompts
+
+Index --> Dev : one coherent onboarding route
+
+note right of Index
+Single entrypoint reduces search overhead.
+Each page has one ownership domain.
+end note
+
+note right of GC
+Config discovery, placeholders, and
+feature flags are centralized and deterministic.
+end note
+
+note right of TSR
+Migration path:
+untyped -> model-first -> generated
+registry.
+end note
+
+@enduml
+
+
+

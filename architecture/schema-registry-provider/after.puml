@@ -1,0 +1,37 @@
+@startuml
+title Schema Registry + Provider (After)
+skinparam backgroundColor #F6FBFF
+skinparam componentStyle rectangle
+skinparam ArrowColor #263238
+skinparam defaultFontName Consolas
+
+actor "SDK Consumer" as Consumer #B2EBF2
+component "defineModel(...)" as DefineModel #FFE082
+component "defineSchema(...)" as DefineSchema #FFF59D
+component "defineDatabase(...)" as DefineDatabase #C5E1A5
+component "defineRegistry(...)" as DefineRegistry #AED581
+component "createTypedClient(...)" as TypedClient #D1C4E9
+component "SchemaIntrospectionProvider\n(interface)" as ProviderInterface #B3E5FC
+component "PostgresIntrospectionProvider" as PostgresProvider #80CBC4
+database "PostgreSQL" as Postgres #90A4AE
+component "IntrospectionSnapshot" as Snapshot #F8BBD0
+component "Generator Core\n(config + renderer)" as GeneratorCore #CE93D8
+
+Consumer --> DefineModel : Row/Insert/Update + metadata
+DefineModel --> DefineSchema
+DefineSchema --> DefineDatabase
+DefineDatabase --> DefineRegistry
+DefineRegistry --> TypedClient : typed fromModel(...)
+
+ProviderInterface <|.. PostgresProvider
+PostgresProvider --> Postgres : catalog queries
+PostgresProvider --> Snapshot : normalized output
+Snapshot --> GeneratorCore : model/schema/db artifacts
+GeneratorCore ..> DefineRegistry : generated registry source
+
+note right of ProviderInterface
+Provider contracts power both
+runtime typed clients and phase-2 generator
+pipelines (direct pg_url + gateway-query).
+end note
+@enduml

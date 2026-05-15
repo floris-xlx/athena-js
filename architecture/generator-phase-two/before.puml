@@ -1,0 +1,24 @@
+@startuml
+title Generator Runtime (Before)
+skinparam backgroundColor #FCFCFC
+skinparam componentStyle rectangle
+skinparam ArrowColor #5D4037
+skinparam defaultFontName Consolas
+
+actor "SDK Consumer" as Consumer #B3E5FC
+component "athena-js CLI" as Cli #FFE082
+component "dist/cli/index.js" as MissingCli #EF9A9A
+component "Schema Introspection" as Introspection #FFF59D
+component "Typed Registry APIs" as Registry #C5E1A5
+
+Consumer --> Cli : "athena-js generate"
+Cli --> MissingCli : dynamic import
+MissingCli ..> Cli : runtime missing
+Registry ..> Introspection : manual usage only
+
+note right of Cli
+No first-class generator config file.
+No artifact emission pipeline.
+Provider adapters not wired.
+end note
+@enduml

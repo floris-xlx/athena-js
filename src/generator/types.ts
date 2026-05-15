@@ -1,0 +1,177 @@
+import type { BackendType } from '../gateway/types.ts'
+import type {
+  IntrospectionSnapshot,
+  SchemaIntrospectionProvider,
+} from '../schema/types.ts'
+
+/**
+ * Supported case transformations for generated symbols and path token variants.
+ */
+export type NamingStyle = 'preserve' | 'camel' | 'pascal' | 'snake' | 'kebab'
+
+/**
+ * Naming configuration for generated TypeScript identifiers.
+ */
+export interface GeneratorNamingConfig {
+  modelType: NamingStyle
+  modelConst: NamingStyle
+  schemaConst: NamingStyle
+  databaseConst: NamingStyle
+  registryConst: NamingStyle
+}
+
+/**
+ * Stable feature flags for generator output behavior.
+ */
+export interface GeneratorFeatureFlags {
+  emitRelations: boolean
+  emitRegistry: boolean
+}
+
+/**
+ * Experimental toggles for optional/forward-compatible generator behavior.
+ */
+export interface GeneratorExperimentalFlags {
+  /**
+   * Legacy compatibility toggle from the initial scaffold.
+   * Gateway introspection is now implemented; this flag is retained for additive config compatibility.
+   */
+  postgresGatewayIntrospection: boolean
+  /**
+   * Enables contract placeholders for future Scylla provider work.
+   */
+  scyllaProviderContracts: boolean
+}
+
+/**
+ * Path templates for each generated artifact category.
+ */
+export interface GeneratorOutputTargets {
+  model: string
+  schema: string
+  database: string
+  registry: string
+}
+
+/**
+ * Output configuration including dynamic placeholder aliases.
+ */
+export interface GeneratorOutputConfig {
+  targets: GeneratorOutputTargets
+  placeholderMap: Record<string, string>
+}
+
+/**
+ * Direct PostgreSQL introspection mode (implemented).
+ */
+export interface PostgresDirectProviderConfig {
+  kind: 'postgres'
+  mode: 'direct'
+  connectionString: string
+  database?: string
+  schemas?: string[]
+}
+
+/**
+ * Athena gateway-backed PostgreSQL introspection mode using `/gateway/query`.
+ */
+export interface PostgresGatewayProviderConfig {
+  kind: 'postgres'
+  mode: 'gateway'
+  gatewayUrl: string
+  apiKey: string
+  database: string
+  schemas?: string[]
+  backend?: BackendType
+}
+
+/**
+ * Scylla introspection provider contract placeholder (phase-two scaffold).
+ */
+export interface ScyllaDirectProviderConfig {
+  kind: 'scylla'
+  mode: 'direct'
+  contactPoints: string[]
+  keyspace: string
+  datacenter?: string
+}
+
+export type GeneratorProviderConfig =
+  | PostgresDirectProviderConfig
+  | PostgresGatewayProviderConfig
+  | ScyllaDirectProviderConfig
+
+/**
+ * Root config contract loaded from `athena.config.ts`.
+ */
+export interface AthenaGeneratorConfig {
+  provider: GeneratorProviderConfig
+  output: GeneratorOutputConfig
+  naming?: Partial<GeneratorNamingConfig>
+  features?: Partial<GeneratorFeatureFlags>
+  experimental?: Partial<GeneratorExperimentalFlags>
+}
+
+/**
+ * Normalized generator config with defaults applied.
+ */
+export interface NormalizedAthenaGeneratorConfig {
+  provider: GeneratorProviderConfig
+  output: GeneratorOutputConfig
+  naming: GeneratorNamingConfig
+  features: GeneratorFeatureFlags
+  experimental: GeneratorExperimentalFlags
+}
+
+/**
+ * Config loader options for CLI/programmatic usage.
+ */
+export interface LoadGeneratorConfigOptions {
+  cwd?: string
+  configPath?: string
+}
+
+/**
+ * Fully loaded config result including resolved file path.
+ */
+export interface LoadedGeneratorConfig {
+  configPath: string
+  config: NormalizedAthenaGeneratorConfig
+}
+
+export type GeneratorArtifactKind = 'model' | 'schema' | 'database' | 'registry'
+
+/**
+ * One generated output file.
+ */
+export interface GeneratedArtifact {
+  kind: GeneratorArtifactKind
+  path: string
+  content: string
+}
+
+/**
+ * In-memory generator output payload.
+ */
+export interface GeneratedArtifacts {
+  snapshot: IntrospectionSnapshot
+  files: GeneratedArtifact[]
+}
+
+/**
+ * Runtime options for executing the generator pipeline.
+ */
+export interface RunGeneratorOptions {
+  cwd?: string
+  configPath?: string
+  dryRun?: boolean
+  provider?: SchemaIntrospectionProvider
+}
+
+/**
+ * Generator execution result including files written to disk.
+ */
+export interface RunGeneratorResult extends GeneratedArtifacts {
+  configPath: string
+  writtenFiles: string[]
+}

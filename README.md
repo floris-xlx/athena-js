@@ -43,6 +43,62 @@ if (error) {
 }
 ```
 
+### Typed schema registry (model-first)
+
+You can keep `createClient(...).from<T>(...)` as-is, or opt into a typed registry:
+
+```ts
+import {
+  createTypedClient,
+  defineDatabase,
+  defineModel,
+  defineRegistry,
+  defineSchema,
+} from "@xylex-group/athena";
+
+const registry = defineRegistry({
+  primary: defineDatabase({
+    public: defineSchema({
+      users: defineModel<{ id: string; email: string }>({
+        meta: {
+          primaryKey: ["id"],
+          nullable: { id: false, email: false },
+        },
+      }),
+    }),
+  }),
+});
+
+const typed = createTypedClient(registry, ATHENA_URL, ATHENA_API_KEY, {
+  tenantKeyMap: {
+    organizationId: "X-Organization-Id",
+  },
+});
+
+await typed
+  .withTenantContext({ organizationId: "org_1" })
+  .fromModel("primary", "public", "users")
+  .select("*");
+```
+
+For full details, see [`docs/typed-schema-registry.md`](./docs/typed-schema-registry.md).
+
+### Typed schema generator (phase 2 scaffolding)
+
+The SDK now includes a project-root generator config system (`athena.config.ts`) and CLI command:
+
+```bash
+athena-js generate
+athena-js generate --dry-run
+athena-js generate --config ./athena.config.ts
+```
+
+Generator output paths support placeholder tokens (database/schema/model + case variants), feature flags, and experimental provider contracts.
+PostgreSQL introspection works both via direct `pg_url` and gateway-only `/gateway/query` execution.
+
+For full generator configuration, see [`docs/generator-config.md`](./docs/generator-config.md).
+For prompt-ready documentation handoff text, see [`docs/generator-codex-handoff-prompt-pack.md`](./docs/generator-codex-handoff-prompt-pack.md).
+
 Every query resolves to `{ data, error, errorDetails?, status, count?, raw }`. `data` is `null` on error; `error` is `null` on success.
 
 For richer handling, inspect `errorDetails` (`code`, `status`, `endpoint`, `method`, `requestId`, etc.) or use `AthenaGatewayError` / `isAthenaGatewayError` from the package exports.
@@ -608,5 +664,8 @@ CI and publish workflows run `typecheck` before build/publish.
 
 ## Learn more
 
+- [Documentation index](docs/index.md) — complete documentation map
 - [Getting started](docs/getting-started.md) — step-by-step walkthrough
+- [Typed schema registry](docs/typed-schema-registry.md) — typed contracts and migration path
+- [Generator config](docs/generator-config.md) — generator provider and output pipeline
 - [API reference](docs/api-reference.md) — complete method and type reference

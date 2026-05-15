@@ -1,356 +1,148 @@
-# Getting started with athena-js
+# Athena JS SDK - Getting Started
 
-Athena is a database driver and API gateway SDK. This guide walks through installation, client setup, querying, mutations, pagination, and React integration (`useAthenaGateway`, `useQuery`, `useMutation`).
+This is the fastest path to a working runtime and then a typed, generated schema workflow.
 
-## 1. Install
+For quick setup and API-level details, follow the sections in order. If your schema is stable, you can skip ahead to the typed and generator sections.
+
+## Prerequisites
+
+- Node.js 18+
+- An Athena gateway URL and API key
+
+## 1) Install
 
 ```bash
 npm install @xylex-group/athena
 # or
 pnpm add @xylex-group/athena
-# or
-yarn add @xylex-group/athena
 ```
 
-Install the React peer dependency only if you plan to use `@xylex-group/athena/react` hooks:
+React is optional and only required for `@xylex-group/athena/react`.
 
 ```bash
-npm install react  # React >=17
+npm install react
 ```
 
-## 2. Create a client
+## 2) Create an Untyped Client
 
-`createClient` returns a query builder bound to your Athena server URL and API key.
+Use `createClient` for direct string-based tables.
 
 ```ts
 import { createClient } from "@xylex-group/athena";
 
-const athena = createClient(
-  "https://athena-db.com",
-  process.env.ATHENA_API_KEY,
+const athena = createClient(process.env.ATHENA_URL!, process.env.ATHENA_API_KEY!, {
+  client: "web-dashboard",
+  backend: { type: "athena" },
+});
+```
+
+Or use the builder for explicit construction and env-based defaults:
+
+```ts
+import { AthenaClient, Backend } from "@xylex-group/athena";
+
+const athena = AthenaClient.builder()
+  .url(process.env.ATHENA_URL!)
+  .key(process.env.ATHENA_API_KEY!)
+  .backend(Backend.Athena)
+  .client("web-dashboard")
+  .build();
+```
+
+`AthenaClient.fromEnvironment()` loads from:
+
+- `ATHENA_URL` or `ATHENA_GATEWAY_URL`
+- `ATHENA_API_KEY` or `ATHENA_GATEWAY_API_KEY`
+
+## 3) Query Basics
+
+```ts
+const users = await athena
+  .from<{ id: string; email: string }>("users")
+  .select("id, email")
+  .eq("active", true)
+  .order("created_at", { ascending: false })
+  .limit(25);
+```
+
+Common methods on read chains:
+
+- `.select()`
+- `.eq`, `.neq`, `.gt`, `.gte`, `.lt`, `.lte`
+- `.like`, `.ilike`, `.is`, `.in`
+- `.contains`, `.containedBy`, `.range`, `.offset`, `.currentPage`, `.pageSize`
+- `.order`
+- `.or`
+- `.single`, `.maybeSingle`
+
+Result shape is `AthenaResult<T>`:
+
+- `data`
+- `error`
+- `errorDetails` (when present)
+- `status`
+- `count` (optional)
+- `raw`
+
+## 4) Writes
+
+### Insert
+
+```ts
+await athena.from<{ id: string; email: string }>("users").insert({ email: "a@b.com" }).select();
+await athena.from<{ id: string; email: string }>("users").insert([{ email: "a@b.com" }]).select();
+```
+
+### Update
+
+```ts
+await athena
+  .from<{ id: string; email: string }>("users")
+  .eq("id", "u-123")
+  .update({ email: "new@b.com" })
+  .select("id, email");
+```
+
+### Upsert
+
+```ts
+await athena
+  .from<{ id: string; email: string }>("users")
+  .upsert({ id: "u-123", email: "a@b.com" }, { onConflict: "id", updateBody: { email: "a@b.com" } })
+  .select("id, email");
+```
+
+### Delete Guardrails
+
+```ts
+await athena.from("users").eq("id", "u-123").delete();
+await athena.from("users").delete({ resourceId: "rk-456" }).single("id, email");
+```
+
+Delete requires one of:
+
+- `eq("id", ...)`
+- `eq("resource_id", ...)`
+- `delete({ resourceId })`
+
+If none is present, the SDK throws immediately before making the request.
+
+## 5) RPC and Raw SQL
+
+```ts
+const result = await athena.rpc<{ count: number }>("list_users", { active_only: true }).single("count");
+const activeCount = result.data?.count ?? 0;
+```
+
+Use raw SQL when you need query shapes that are not ergonomic with the builder:
+
+```ts
+const rows = await athena.query<{ id: number; name: string }>(
+  "select id, name from users where active = true",
 );
 ```
 
-You can also pass a third `options` argument to set defaults for every request:
-
-```ts
-const athena = createClient(
-  "https://athena-db.com",
-  process.env.ATHENA_API_KEY,
-  {
-    client: "your_client",
-    headers: {
-      "X-User-Id": currentUser.id ?? "",
-    },
-  },
-);
-```
-
-## 3. Select rows
-
-Every query starts with `.from(tableName)` and ends with `.select()`.
-
-```ts
-// fetch all columns
-const { data, error, errorDetails, status } = await athena.from("users").select();
-
-if (error) {
-  console.error("query failed:", error);
-} else {
-  console.table(data);
-}
-```
-
-Select specific columns by passing a comma-separated string:
-
-```ts
-const { data } = await athena.from("users").select("id, name, email");
-```
-
-Annotate the row type for full TypeScript inference:
-
-```ts
-interface User {
-  id: number;
-  name: string;
-  email: string;
-  active: boolean;
-}
-
-const { data } = await athena.from<User>("users").select("id, name");
-// data is User[] | null
-```
-
-## 4. Filter rows
-
-Chain filter methods with `.select()`. Filters accumulate and are all sent in the same request.
-
-```ts
-const { data } = await athena
-  .from("users")
-  .select("id, name, email")
-  .eq("active", true)
-  .gte("score", 100)
-  .ilike("email", "%@example.com")
-  .not("role", "eq", "banned");
-```
-
-Canonical read style is:
-
-```ts
-const { data } = await athena
-  .from("instruments")
-  .select("name, section_id")
-  .eq("name", "violin");
-```
-
-All available filter methods:
-
-| Method | SQL equivalent |
-|--------|---------------|
-| `.eq(col, val)` | `col = val` |
-| `.eqUuid(col, val)` | `col = val::uuid` (explicit UUID compare) |
-| `.eqCast(col, val, cast)` | `col = val::cast` (explicit cast compare) |
-| `.neq(col, val)` | `col != val` |
-| `.gt(col, val)` | `col > val` |
-| `.gte(col, val)` | `col >= val` |
-| `.lt(col, val)` | `col < val` |
-| `.lte(col, val)` | `col <= val` |
-| `.like(col, val)` | `col LIKE val` |
-| `.ilike(col, val)` | `col ILIKE val` |
-| `.is(col, val)` | `col IS val` |
-| `.in(col, vals)` | `col IN (…)` |
-| `.contains(col, vals)` | `col @> vals` |
-| `.containedBy(col, vals)` | `col <@ vals` |
-| `.match(filters)` | multiple `col = val` |
-| `.not(col, op, val)` | `NOT col op val` |
-| `.or(expression)` | `col1.op1.val1,col2.op2.val2` |
-
-`eq()` also auto-detects UUID-like values on identifier columns (`id`, `*_id`, `*uuid*`) and uses a typed-safe comparison path, so fluent UUID filters work without manual app-side casts.
-
-## 5. Paginate results
-
-The builder supports two styles of pagination. Both map to plain body fields on `/gateway/fetch` — pick the one that matches your backend/UI.
-
-### 5.1 Offset / limit
-
-Good for infinite-scroll or cursor-free sequential loading.
-
-```ts
-// rows 51..75
-const { data } = await athena
-  .from("orders")
-  .select("id, total")
-  .limit(25)
-  .offset(50);
-
-// range shorthand — equivalent to .offset(0).limit(10)
-const { data: firstTen } = await athena
-  .from("orders")
-  .select()
-  .range(0, 9);
-```
-
-### 5.2 Page based
-
-Good for classic "page 1 of 10" UIs. `.currentPage` is 1-based.
-
-```ts
-// second page of 25 rows each
-const { data } = await athena
-  .from("orders")
-  .select("id, total")
-  .currentPage(2)
-  .pageSize(25);
-
-// if your gateway needs a total-pages hint in the request, pass it
-const { data: hinted } = await athena
-  .from("orders")
-  .select("id, total")
-  .currentPage(2)
-  .pageSize(25)
-  .totalPages(8);
-```
-
-Payload field mapping:
-
-| Method | Body field |
-|--------|------------|
-| `.limit(n)` | `limit` |
-| `.offset(n)` | `offset` |
-| `.currentPage(n)` | `current_page` |
-| `.pageSize(n)` | `page_size` |
-| `.totalPages(n)` | `total_pages` |
-
-Pagination helpers work **before or after `.select()`** — the `FilterChain` is shared:
-
-```ts
-// both of these serialize identically
-await athena.from("users").currentPage(2).pageSize(50).select();
-await athena.from("users").select().currentPage(2).pageSize(50);
-```
-
-## 5a. Sort results with `.order()`
-
-`.order()` maps to the gateway `sort_by: { field, direction }` object. It's available on the base builder, `SelectChain`, `UpdateChain`, and on delete — so it can appear before or after the operation terminator.
-
-```ts
-// ascending (default)
-await athena.from("events").select("id, occurred_at").order("occurred_at");
-
-// descending
-await athena
-  .from("rsf_messages")
-  .eq("room_id", roomId)
-  .select("*", { stripNulls: false })
-  .order("created_at", { ascending: false })
-  .limit(100);
-// → SELECT * FROM rsf_messages WHERE room_id = $1
-//     ORDER BY created_at DESC LIMIT 100
-
-// combined with page-based pagination
-await athena
-  .from("orders")
-  .select("id, total, created_at")
-  .order("created_at", { ascending: false })
-  .currentPage(1)
-  .pageSize(25);
-
-// pick the most-recent row
-const { data: latest } = await athena
-  .from("messages")
-  .eq("room_id", roomId)
-  .select("*")
-  .order("created_at", { ascending: false })
-  .single();
-```
-
-> Only the last `.order()` wins — the SDK does not support multi-column ordering. Use `.rpc()` or `.query()` if you need that.
-
-## 6. Fetch a single row
-
-`.single()` returns the first row as a plain object instead of an array, or `null` if there are no results.
-
-```ts
-const { data: user } = await athena
-  .from("users")
-  .select("id, name")
-  .eq("id", 42)
-  .single();
-
-if (user) console.log(user.name);
-```
-
-## 7. Insert rows
-
-```ts
-const { data: inserted } = await athena
-  .from("users")
-  .insert({ name: "Bilbo", email: "bilbo@shire.com" })
-  .select("id, name");
-
-// insert multiple rows
-const { data } = await athena
-  .from("characters")
-  .insert([
-    { name: "Frodo" },
-    { name: "Sam" },
-  ])
-  .select();
-
-// Types are inferred from payload shape:
-// inserted: User | null (single payload)
-// data: User[] | null (array payload)
-```
-
-## 8. Update rows
-
-Apply filter conditions before calling `.update()`. The conditions become the `WHERE` clause.
-
-```ts
-const { data: updated } = await athena
-  .from("users")
-  .update({ name: "Bilbo Baggins" })
-  .eq("id", inserted?.[0]?.id ?? 0)
-  .select();
-```
-
-## 9. Upsert rows
-
-```ts
-await athena
-  .from("users")
-  .upsert(
-    { id: 1, name: "Bilbo" },
-    { updateBody: { name: "Bilbo Baggins" }, onConflict: "id" },
-  )
-  .select("id, name");
-
-// upsert(one) resolves as AthenaResult<User>
-// upsert(many) resolves as AthenaResult<User[]>
-```
-
-`updateBody` specifies which fields to update on conflict. `onConflict` names the unique key column(s).
-
-## 10. Delete rows
-
-```ts
-// delete by id
-await athena.from("users").eq("id", 1).delete();
-
-// delete and return the deleted row
-const { data: deleted } = await athena
-  .from("users")
-  .eq("resource_id", "abc-123")
-  .delete()
-  .select("id, name");
-```
-
-Delete requires a `.eq("resource_id", …)`, `.eq("id", …)`, or `options.resourceId` — calling `.delete()` without one throws an error.
-
-## 11. RPC
-
-Use `.rpc()` to call Postgres functions with a chainable API. By default it uses `POST /gateway/rpc`; with `{ get: true }`, it uses the compatibility route `GET /rpc/{function_name}`.
-
-```ts
-const { data, count } = await athena
-  .rpc("list_users", { role: "admin" }, { schema: "public", count: "exact" })
-  .eq("active", true)
-  .order("created_at", { ascending: false })
-  .range(0, 24)
-  .select(["id", "email"]);
-
-const { data: user } = await athena
-  .rpc<{ id: number; email: string }>("list_users", { role: "admin" })
-  .single("id,email");
-
-const { data: readOnlyUser } = await athena
-  .rpc<{ id: number; email: string }>("list_users", { role: "admin" }, { get: true, count: "planned", head: true })
-  .eq("id", 1)
-  .single("id,email");
-```
-
-RPC chain supports: `.eq()`, `.neq()`, `.gt()`, `.gte()`, `.lt()`, `.lte()`, `.like()`, `.ilike()`, `.is()`, `.in()`, `.order()`, `.limit()`, `.offset()`, `.range()`, `.select()`, `.single()`, `.maybeSingle()`.
-RPC options include `schema`, `count` (`exact`, `planned`, `estimated`), `head`, and `get`.
-
-For table-returning RPC functions, you can apply filters before `.single()`/`.maybeSingle()`:
-
-```ts
-const { data } = await athena
-  .rpc("list_stored_countries")
-  .eq("id", 1)
-  .single();
-```
-## 12. React hooks
-
-`@xylex-group/athena/react` now provides:
-
-- `useAthenaGateway` for low-level gateway calls.
-- `createAthenaQueryClient` + `AthenaQueryClientProvider` for runtime state.
-- `useQuery` for read lifecycle state.
-- `useMutation` for write lifecycle state.
-
-Default runtime behavior is latency-first: no persistent data cache by default, inflight dedupe only, and manual `refetch()` after mutations.
+## 6) React Quick Start
 
 ```tsx
 "use client";
@@ -358,139 +150,179 @@ Default runtime behavior is latency-first: no persistent data cache by default, 
 import {
   AthenaQueryClientProvider,
   createAthenaQueryClient,
-  useMutation,
   useQuery,
 } from "@xylex-group/athena/react";
 import { createClient } from "@xylex-group/athena";
 
-const athena = createClient(
-  process.env.NEXT_PUBLIC_ATHENA_URL!,
-  process.env.NEXT_PUBLIC_ATHENA_API_KEY!,
-);
-
+const athena = createClient(process.env.NEXT_PUBLIC_ATHENA_URL!, process.env.NEXT_PUBLIC_ATHENA_API_KEY!);
 const queryClient = createAthenaQueryClient({
   cache: { mode: "none" },
 });
 
-function UserListInner() {
-  const users = useQuery<Array<{ id: number; name: string; email: string }>>({
-    queryKey: ["users"],
-    queryFn: () =>
-      athena
-        .from("users")
-        .eq("active", true)
-        .select("id,name,email")
-        .limit(25),
+function ProductList() {
+  const productsQuery = useQuery({
+    queryKey: ["products", { limit: 50 }],
+    queryFn: () => athena.from<{ id: string; name: string }>("products").select("id,name,price").limit(50),
+    select: (result) => result.data ?? [],
   });
 
-  const createUser = useMutation<{ name: string; email: string }, { id: number }>({
-    mutationFn: async (input) =>
-      athena.from("users").insert(input).select("id").single(),
-    onSuccess: () => {
-      void users.refetch();
-    },
-  });
-
-  if (users.isLoading) return <p>Loading…</p>;
-  if (users.error) return <p>Error: {users.error.message}</p>;
+  if (productsQuery.isLoading) return <p>Loading...</p>;
+  if (productsQuery.error) return <p>{productsQuery.error.message}</p>;
 
   return (
-    <div>
-      <button onClick={() => createUser.mutate({ name: "Ada", email: "ada@example.com" })}>
-        Add user
-      </button>
-      <ul>
-        {(users.data ?? []).map((user) => (
-          <li key={user.id}>{user.name}</li>
-        ))}
-      </ul>
-    </div>
+    <ul>
+      {(productsQuery.data ?? []).map((row) => (
+        <li key={row.id}>{row.name}</li>
+      ))}
+    </ul>
   );
 }
 
-export function UserList() {
+export function ProductsPage() {
   return (
     <AthenaQueryClientProvider client={queryClient}>
-      <UserListInner />
+      <ProductList />
     </AthenaQueryClientProvider>
   );
 }
 ```
 
-Use `useAthenaGateway` when you need explicit access to raw gateway payloads and lifecycle logs:
+The query runtime is intentionally lean:
 
-```tsx
-import { useAthenaGateway } from "@xylex-group/athena/react";
-import { useEffect } from "react";
+- no persistent cache by default (`cache.mode = "none"`)
+- retry is off by default (`retry = 0`)
+- invalidation is typically handled with explicit `refetch()`
 
-function GatewayDebugPanel() {
-  const { fetchGateway, lastResponse, isLoading, error } = useAthenaGateway({
-    baseUrl: "https://athena-db.com",
-    apiKey: process.env.NEXT_PUBLIC_ATHENA_API_KEY,
-  });
+## 7) Move to the Typed Type System
 
-  useEffect(() => {
-    void fetchGateway({
-      table_name: "users",
-      columns: ["id", "name"],
-      limit: 10,
-    });
-  }, [fetchGateway]);
-
-  if (isLoading) return <p>Loading…</p>;
-  if (error) return <p>Error: {error}</p>;
-
-  return (
-    <ul>
-      {(lastResponse?.data as Array<{ id: number; name: string }> ?? []).map(
-        (user) => <li key={user.id}>{user.name}</li>,
-      )}
-    </ul>
-  );
-}
-```
-
-`useAthenaGateway` also exposes `insertGateway`, `updateGateway`, `deleteGateway`, and `rpcGateway`, plus `lastRequest` and `lastResponse` for debugging.
-
-For Athena-backed hook examples built on the SDK query builder, see:
-
-- `test-sdk/examples/react-hooks/products-panel.tsx`
-- `test-sdk/examples/react-hooks/manual-query.tsx`
-- `test-sdk/examples/react-hooks/adapters.ts`
-
-These hooks use direct Athena DB calls inside `queryFn` and `mutationFn` (`createClient` + `athena.from(...).select()/insert()/eq()`).
-
-## 13. Error handling
-
-All query methods return `{ data, error, errorDetails?, status, count?, raw }`. Check `error` before using `data`.
+When table contracts begin to stabilize, move stable domains to model-first types.
 
 ```ts
-const { data, error, errorDetails, status } = await athena.from("users").select();
+import {
+  createTypedClient,
+  defineDatabase,
+  defineModel,
+  defineRegistry,
+  defineSchema,
+} from "@xylex-group/athena";
 
-if (error) {
-  // error is a readable message
-  console.error(`[${status}] ${error}`);
-  console.error(errorDetails?.code, errorDetails?.endpoint, errorDetails?.requestId);
-  return;
-}
+const registry = defineRegistry({
+  app: defineDatabase({
+    public: defineSchema({
+      users: defineModel<{ id: string; email: string; createdAt: string | null }>(
+        {
+          meta: {
+            primaryKey: ["id"],
+            nullable: { id: false, email: false, createdAt: true },
+          },
+        },
+      ),
+    }),
+  }),
+});
 
-// data is typed as User[] | null here
+const typed = createTypedClient(registry, process.env.ATHENA_URL!, process.env.ATHENA_API_KEY!, {
+  tenantKeyMap: {
+    organizationId: "X-Organization-Id",
+  },
+});
+
+await typed
+  .withTenantContext({ organizationId: "org-1" })
+  .fromModel("app", "public", "users")
+  .select("id, email")
+  .order("created_at", { ascending: false });
 ```
 
-`useQuery` and `useMutation` normalize Athena errors into `{ message, status?, code?, details?, raw? }`. `useAthenaGateway` keeps gateway-specific string error state and throws from mutation helpers. Use `AthenaGatewayError` / `isAthenaGatewayError` for typed gateway exceptions.
+At this point you get:
 
-## 14. Local validation commands
+- compile-time row/insert/update types from model declarations
+- stable logical model names while preserving physical `tableName`
+- one tenant-header mapping surface across all runtime calls
 
-Before opening a PR, run:
+See [`typed-schema-registry.md`](typed-schema-registry.md) for the full typed system model and migration path.
+
+## 8) Generate Registry Code From PostgreSQL
+
+When the schema changes often, generate model files and registry code instead of hand-maintaining contracts.
 
 ```bash
-pnpm typecheck
-pnpm check:all
+athena-js generate
+athena-js generate --dry-run
+athena-js generate --config ./athena.config.ts
 ```
 
-`check:all` runs lint, typecheck, tests, and build in sequence.
+The full generator contract, provider modes, output tokens, and feature flags are documented in
+[`generator-config.md`](generator-config.md).
 
-## Next steps
+A minimal direct mode config:
 
-- [API reference](api-reference.md) — complete documentation for every method, option, and type
+```ts
+import { defineGeneratorConfig } from "@xylex-group/athena";
 
+const config = defineGeneratorConfig({
+  provider: {
+    kind: "postgres",
+    mode: "direct",
+    connectionString: process.env.DATABASE_URL!,
+    database: "app_db",
+    schemas: ["public"],
+  },
+  output: {
+    targets: {
+      model: "src/generated/{database_kebab}/{schema_kebab}/{model_kebab}.model.ts",
+      schema: "src/generated/{database_kebab}/{schema_kebab}/index.ts",
+      database: "src/generated/{database_kebab}/index.ts",
+      registry: "src/generated/index.ts",
+    },
+  },
+});
+
+export default config;
+```
+
+Use gateway mode when the codegen process cannot access PostgreSQL directly.
+
+```ts
+provider: {
+  kind: "postgres",
+  mode: "gateway",
+  gatewayUrl: process.env.ATHENA_URL!,
+  apiKey: process.env.ATHENA_API_KEY!,
+  database: "app_db",
+  schemas: ["public"],
+}
+```
+
+## 9) Error Handling Patterns
+
+Use helper functions for branch-safe request handling:
+
+```ts
+import { isOk, requireAffected, unwrapRows, unwrapOne } from "@xylex-group/athena";
+
+const list = await athena.from<{ id: string }>("users").select("id");
+if (!isOk(list)) {
+  // route-specific error behavior
+  throw new Error(list.error!);
+}
+const rows = unwrapRows(list);
+
+const one = await athena.from<{ id: string }>("users").eq("id", "u-1").single("id");
+const user = unwrapOne(one, { allowNull: true });
+
+const inserted = await athena.from("users").insert({ email: "a@b.com" }).select("id");
+requireAffected(inserted, { min: 1 });
+```
+
+## 10) Learn More
+
+- [Typed schema and registry architecture](typed-schema-registry.md)
+- [Generator configuration and output behavior](generator-config.md)
+- [API reference](api-reference.md)
+- [`generator-codex-handoff-prompt-pack.md`](generator-codex-handoff-prompt-pack.md)
+
+The next decision point is straightforward:
+
+- keep table-string calls for legacy stability, or
+- adopt `fromModel` and optional generated contracts for team-wide consistency.
