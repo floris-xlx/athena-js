@@ -1,0 +1,34 @@
+@startuml
+title Next.js Build Failure From SDK 1.6.0 (Before Fix)
+skinparam backgroundColor #FAFAFA
+skinparam sequence {
+  ArrowColor #6D4C41
+  LifeLineBorderColor #8D6E63
+  LifeLineBackgroundColor #FFF3E0
+  ParticipantBorderColor #5D4037
+  ParticipantBackgroundColor #FFE0B2
+}
+skinparam defaultFontName Consolas
+autonumber
+
+actor "Developer" as Dev
+participant "Next.js Compiler\n(Webpack/Turbopack)" as Compiler #BBDEFB
+participant "@xylex-group/athena\ndist/index.js" as SDK #FFE082
+participant "loadGeneratorConfig()" as Loader #FFCCBC
+participant "Dynamic import expression\nimport(`${moduleUrl.href}?cacheBust=${Date.now()}`)" as DynImport #EF9A9A
+participant "Module Resolver" as Resolver #E1BEE7
+
+Dev -> Compiler : next build / next dev
+Compiler -> SDK : Parse SDK dependency graph
+Compiler -> Loader : Parse reachable exports
+Loader -> DynImport : Contains runtime template-string import
+Compiler -> Resolver : Try to resolve dynamic import context
+Resolver --> Compiler : No resolvable module candidates
+Compiler --> Dev : Module not found: Can't resolve <dynamic>
+
+note right of Compiler
+Failure happens at compile time, before app runtime.
+Generator code was bundled into dist/index.js,
+so Next analyzed it even when generator APIs were not called.
+end note
+@enduml

@@ -1,0 +1,28 @@
+@startuml
+title CI Test Import Graph (Before)
+skinparam backgroundColor #FFFDF7
+skinparam componentStyle rectangle
+skinparam shadowing false
+skinparam defaultFontName Courier
+
+actor "GitHub Actions\n(npm test)" as gha #E6F3FF
+rectangle "Repo Root\nnode_modules" as rootMods #FFE6E6
+rectangle "Root Test\nreact-test-sdk-hooks-integration.test.ts" as rootTest #FFF2CC
+rectangle "Test SDK Server\ntest-sdk/src/server.ts" as sdkServer #F4E1FF
+component "express package" as expressPkg #FFD6D6
+
+gha --> rootTest : run Node test runner
+rootTest --> sdkServer : import createAthenaTestSdkServer()
+sdkServer --> expressPkg : import express
+expressPkg -[dashed]-> rootMods : resolve from root install
+
+note right of rootMods
+Root package.json has no express in devDependencies.
+CI clean install does not provide express in root node_modules.
+end note
+
+note bottom of expressPkg #FFCDD2
+ERR_MODULE_NOT_FOUND in CI
+Cannot find package 'express'
+end note
+@enduml

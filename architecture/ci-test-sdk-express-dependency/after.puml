@@ -1,0 +1,27 @@
+@startuml
+title CI Test Import Graph (After)
+skinparam backgroundColor #F7FFF8
+skinparam componentStyle rectangle
+skinparam shadowing false
+skinparam defaultFontName Courier
+
+actor "GitHub Actions\n(npm test)" as gha #E6F3FF
+rectangle "Repo Root\nnode_modules" as rootMods #E8F5E9
+rectangle "Root Test\nreact-test-sdk-hooks-integration.test.ts" as rootTest #FFF2CC
+rectangle "Test SDK Server\ntest-sdk/src/server.ts" as sdkServer #E1F5FE
+component "express package" as expressPkg #C8E6C9
+
+gha --> rootTest : run Node test runner
+rootTest --> sdkServer : import createAthenaTestSdkServer()
+sdkServer --> expressPkg : import express
+expressPkg --> rootMods : resolved from root devDependencies
+
+note right of rootMods
+Root package.json now declares express in devDependencies.
+Clean CI install provides express for root test imports.
+end note
+
+note bottom of rootTest #C5E1A5
+react-test-sdk-hooks-integration.test.ts runs without module resolution failure
+end note
+@enduml
