@@ -385,153 +385,267 @@ git diff --exit-code
 
 ## Troubleshooting
 
-### 1) Config not discovered
+### 1) Config discovery failures (file name and location mismatch)
 
 Symptom:
 
-- `No generator config found in ... Expected one of: ...`
+- `No generator config found in <cwd>. Expected one of: ...`
 
 Likely cause:
 
-- wrong file name or wrong working directory
+- config file name is unsupported
+- CLI is executed from the wrong directory
 
 How to confirm:
 
-- run from repo root
-- list candidates (`athena.config.ts/js`, `athena-js.config.ts/js`, `.athena.config.ts/js`)
+- run the command from the intended project root
+- check that one of these files exists in that exact directory:
+  `athena.config.ts/js`, `athena-js.config.ts/js`, `.athena.config.ts/js`
 
-Fix:
+Exact fix:
 
-- rename/move config to a supported filename, or pass `--config <path>`
+- move/rename config to a supported file name in the working directory
+- or pass an explicit path:
+  `athena-js generate --config ./path/to/athena.config.ts`
 
-### 2) Config export shape rejected
+Direct mode example:
+
+```ts
+export default {
+  provider: {
+    kind: "postgres",
+    mode: "direct",
+    connectionString: process.env.PG_URL!,
+    schemas: ["public"],
+  },
+  output: {
+    targets: {
+      model: "src/generated/{database_kebab}/{schema_kebab}/{model_kebab}.model.ts",
+      schema: "src/generated/{database_kebab}/{schema_kebab}/index.ts",
+      database: "src/generated/{database_kebab}/index.ts",
+      registry: "src/generated/index.ts",
+    },
+    placeholderMap: {},
+  },
+};
+```
+
+Gateway mode example:
+
+```ts
+export default {
+  provider: {
+    kind: "postgres",
+    mode: "gateway",
+    gatewayUrl: process.env.ATHENA_URL!,
+    apiKey: process.env.ATHENA_API_KEY!,
+    database: "app_db",
+    schemas: ["public"],
+  },
+  output: {
+    targets: {
+      model: "src/generated/{database_kebab}/{schema_kebab}/{model_kebab}.model.ts",
+      schema: "src/generated/{database_kebab}/{schema_kebab}/index.ts",
+      database: "src/generated/{database_kebab}/index.ts",
+      registry: "src/generated/index.ts",
+    },
+    placeholderMap: {},
+  },
+};
+```
+
+### 2) Gateway auth/header/backend mismatches
 
 Symptom:
 
-- `Generator config file must export a config object as default export or 'config'.`
+- gateway mode fails with 401/403/4xx errors from `/gateway/query`
+- direct mode works, but gateway mode fails with the same schema/output settings
 
 Likely cause:
 
-- module exports helper functions only, or nested object without default/config
+- invalid `gatewayUrl` or `apiKey`
+- wrong backend override for introspection SQL
+- proxy/gateway strips required request headers before Athena receives the call
 
 How to confirm:
 
-- open the config file and verify exported value shape
+- run: `athena-js generate --config ./athena.config.ts --dry-run`
+- verify `/gateway/query` works with the same URL/key pair
+- if `provider.backend` is set, confirm it resolves to PostgreSQL
 
-Fix:
+```bash
+curl -X POST "$ATHENA_URL/gateway/query" \
+  -H "content-type: application/json" \
+  -H "x-api-key: $ATHENA_API_KEY" \
+  -H "X-Backend-Type: postgresql" \
+  -d '{"query":"select 1"}'
+```
 
-- export default `defineGeneratorConfig({...})` or `export const config = {...}`
+Exact fix:
 
-### 3) Gateway mode fails
+- set a valid `gatewayUrl` and `apiKey`
+- remove a bad backend override or set `backend: "postgresql"`
+- ensure upstream preserves auth/backend headers (`apikey`, `x-api-key`, `X-Backend-Type`)
+
+Gateway fix example:
+
+```ts
+provider: {
+  kind: "postgres",
+  mode: "gateway",
+  gatewayUrl: process.env.ATHENA_URL!,
+  apiKey: process.env.ATHENA_API_KEY!,
+  database: "app_db",
+  schemas: ["public", "billing"],
+  backend: "postgresql",
+}
+```
+
+### 3) Empty snapshot / missing schema results
 
 Symptom:
 
-- request errors from `/gateway/query`
+- generation succeeds, but expected tables/schemas are missing in emitted artifacts
 
 Likely cause:
 
-- invalid `gatewayUrl`/`apiKey`, wrong backend routing, or gateway endpoint policy mismatch
+- `provider.schemas` excludes target schemas
+- direct mode `connectionString` points to the wrong database
+- gateway/database role lacks visibility for catalog metadata in requested schemas
 
 How to confirm:
 
-- verify endpoint accepts `POST /gateway/query`
-- verify configured backend can execute PostgreSQL catalog SQL
+- run with `--dry-run` and compare expected vs emitted files
+- make `schemas` explicit (for example `["public", "billing"]`)
+- compare output between direct mode and gateway mode against the same database
 
-Fix:
+Exact fix:
 
-- correct URL/key/backend values
-- confirm gateway allows introspection catalog queries in the target environment
+- set explicit `schemas` in config
+- ensure direct mode `connectionString` points to the correct DB
+- ensure gateway credentials have catalog-read access for those schemas
 
-### 4) Empty or partial snapshot
+Direct mode example:
+
+```ts
+provider: {
+  kind: "postgres",
+  mode: "direct",
+  connectionString: process.env.PG_URL!,
+  database: "app_db",
+  schemas: ["public", "billing"],
+}
+```
+
+Gateway mode example:
+
+```ts
+provider: {
+  kind: "postgres",
+  mode: "gateway",
+  gatewayUrl: process.env.ATHENA_URL!,
+  apiKey: process.env.ATHENA_API_KEY!,
+  database: "app_db",
+  schemas: ["public", "billing"],
+  backend: "postgresql",
+}
+```
+
+### 4) Duplicate output path collisions from placeholder templates
 
 Symptom:
 
-- generated output is missing expected schemas/tables
+- generation fails with: `Generator output collision detected for path: ...`
 
 Likely cause:
 
-- `schemas` filter excludes expected schema, or database permissions are restricted
+- path templates collapse multiple models/schemas into one file path
+- `placeholderMap` aliases remove uniqueness dimensions
 
 How to confirm:
 
-- set `schemas` explicitly and compare result
-- run introspection in direct mode against same DB user where possible
+- inspect `output.targets` and ensure model/schema/database templates are distinct
+- verify model targets include schema and model tokens
 
-Fix:
+Exact fix:
 
-- include required schemas in config and grant catalog-read permissions
+- include `{database_*}`, `{schema_*}`, and `{model_*}` where needed to guarantee unique model paths
+- keep schema/database index files separate from model file templates
 
-### 5) Placeholder token errors
+Collision-prone example:
+
+```ts
+targets: {
+  model: "src/generated/model.ts",
+  schema: "src/generated/schema.ts",
+  database: "src/generated/db.ts",
+  registry: "src/generated/index.ts",
+}
+```
+
+Stable example:
+
+```ts
+targets: {
+  model: "src/generated/{database_kebab}/{schema_kebab}/{model_kebab}.model.ts",
+  schema: "src/generated/{database_kebab}/{schema_kebab}/index.ts",
+  database: "src/generated/{database_kebab}/index.ts",
+  registry: "src/generated/index.ts",
+}
+```
+
+### 5) Unsafe identifier rendering expectations
 
 Symptom:
 
-- `Unknown placeholder token "..." in template "..."`
+- concern that names like `class`, `from`, `order-id`, or `123flag` will generate invalid TypeScript
 
 Likely cause:
 
-- typo or unresolved alias chain in `placeholderMap`
+- expectation that column names and symbol names are emitted raw
 
 How to confirm:
 
-- inspect every `{token}` in `output.targets` and `placeholderMap`
+- introspect a table with unsafe names in either mode (direct or gateway)
+- inspect generated interfaces and model metadata keys
 
-Fix:
+Exact fix:
 
-- correct token names and keep alias chains resolvable
+- no config workaround is required
+- generator already escapes unsafe property keys and normalizes symbol identifiers
+- use `naming.*` only when you want different symbol style, not for safety
 
-### 6) Output path collisions
+Expected output shape:
+
+```ts
+export interface PublicUsersRow {
+  "order-id"?: string | null;
+  from: string;
+  class_value: string;
+}
+```
+
+### 6) Type mapping surprises (e.g. bigint as string)
 
 Symptom:
 
-- `Generator output collision detected for path: ...`
+- generated types are broader/different than expected (for example `bigint` -> `string`)
 
 Likely cause:
 
-- multiple artifact contexts resolve to the same path template
+- high-precision numeric mapping is intentionally loss-safe (`int8`/`numeric`/`decimal` -> `string`)
+- nullable columns intentionally emit as optional property plus `| null`
 
 How to confirm:
 
-- inspect rendered `model`/`schema`/`database`/`registry` target patterns
+- inspect generated model types and compare with source column types
+- compare direct and gateway output (both pass through the same PostgreSQL type mapper)
 
-Fix:
+Exact fix:
 
-- include schema/model/database disambiguators in target patterns
-
-### 7) Type surprises (`bigint`, `numeric`, nullable keys)
-
-Symptom:
-
-- generated type differs from expected runtime type
-
-Likely cause:
-
-- intentional mapping semantics (`bigint`/`numeric` as `string`, nullable columns as optional + `| null`)
-
-How to confirm:
-
-- inspect generated model file and source column metadata
-
-Fix:
-
-- adapt app-level parsing/coercion where needed; do not assume JS-safe integer conversion for high-precision values
-
-### 8) Reserved or unsafe identifiers
-
-Symptom:
-
-- concern that names like `class`/`from`/`order-id` will break output
-
-Likely cause:
-
-- misunderstanding of safe-key escaping and identifier normalization
-
-How to confirm:
-
-- inspect generated file keys and symbol names
-
-Fix:
-
-- no config change required; this is handled automatically by renderer naming/escaping logic
+- keep precision-sensitive values as strings at boundaries and parse explicitly where needed (`BigInt`, decimal library)
+- keep explicit nullable handling in app code
+- avoid implicit JS number coercion for `bigint`/`numeric`
 
 ## Known limitations
 
