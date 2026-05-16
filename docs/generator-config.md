@@ -383,6 +383,8 @@ pnpm exec athena-js generate --config ./athena.config.ts
 git diff --exit-code
 ```
 
+For complete CI/CD patterns (direct `pg_url`, gateway-only `/gateway/query`, secure secret mapping, retry guidance, and branch policy), see [`generator-cicd.md`](./generator-cicd.md).
+
 ## Troubleshooting
 
 ### 1) Config discovery failures (file name and location mismatch)
