@@ -1,0 +1,27 @@
+@startuml
+title Athena SDK Cookie Helpers (Before)
+
+skinparam backgroundColor White
+skinparam defaultTextAlignment center
+skinparam shadowing false
+skinparam ArrowColor Black
+skinparam DefaultTextColor Black
+skinparam Rectangle {
+  BorderColor Black
+  FontColor Black
+}
+
+rectangle "Consumer App\n(Next.js middleware / proxy)" as consumer #F3F7FF
+rectangle "@xylex-group/athena\n(current SDK surface)" as sdk #F8F8F8
+rectangle "Athena Auth Server\n(Rust athena-auth runtime)" as server #FFF7E8
+
+consumer --> sdk : import auth client
+consumer --> consumer : manual cookie parsing\n(manual prefix / secure handling)
+consumer --> server : request with cookie header
+sdk --> server : auth API calls
+
+note bottom of consumer
+No dedicated `@xylex-group/athena/cookies` module.
+Cookie parsing + cache inspection logic lives in app code.
+end note
+@enduml

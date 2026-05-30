@@ -1,0 +1,32 @@
+@startuml
+title Athena SDK Cookie Helpers (After)
+
+skinparam backgroundColor White
+skinparam defaultTextAlignment center
+skinparam shadowing false
+skinparam ArrowColor Black
+skinparam DefaultTextColor Black
+skinparam Rectangle {
+  BorderColor Black
+  FontColor Black
+}
+
+rectangle "Consumer App\n(Next.js middleware / proxy)" as consumer #F3F7FF
+rectangle "@xylex-group/athena/cookies\n(new SDK subpath)" as cookies #E9FCEB
+rectangle "@xylex-group/athena\n(auth + gateway client)" as sdk #F8F8F8
+rectangle "Athena Auth Server\n(Rust athena-auth runtime)" as server #FFF7E8
+
+consumer --> cookies : getSessionCookie(request)\ngetCookieCache(request, secret)\nsetRequestCookie(...)
+consumer --> sdk : auth/gateway calls
+consumer --> server : request with validated cookie/header handling
+cookies --> consumer : consistent prefix handling\n(athena-auth + legacy fallback)
+sdk --> server : auth API calls
+
+note bottom of cookies
+SDK-only helper module:
+- better-auth-like getSessionCookie signature
+- cookie parsing / Set-Cookie merge utils
+- compact/jwt cookie-cache verification helpers
+No server-runtime dependency added to athena-js.
+end note
+@enduml
