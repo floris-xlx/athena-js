@@ -1,0 +1,33 @@
+@startuml
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontColor #000000
+skinparam componentStyle rectangle
+skinparam packageStyle rectangle
+skinparam ArrowColor #000000
+skinparam TitleFontColor #000000
+
+title Root Import After Browser-Safe Export Conditions
+
+actor "Next.js Client Bundle" as Client
+actor "Node.js Runtime" as NodeRuntime
+component "package.json exports" as Exports #E8F4FD
+component "dist/browser.js\n(browser-safe entry)" as BrowserEntry #D5F5E3
+component "dist/index.js\n(full Node entry)" as NodeEntry #FCE8E6
+component "core client exports\n(createClient, db, auth, helpers)" as CoreClient #D6EAF8
+component "browser stubs for\nnode-only APIs" as Stubs #FCF3CF
+component "schema/generator Node modules\n(pg, fs, path)" as NodeOnly #F8D7DA
+
+Client --> Exports : import "@xylex-group/athena"
+Exports --> BrowserEntry : condition: browser.import
+BrowserEntry --> CoreClient : real exports
+BrowserEntry --> Stubs : node-only symbols throw clear errors
+
+NodeRuntime --> Exports : import "@xylex-group/athena"
+Exports --> NodeEntry : condition: import/require
+NodeEntry --> NodeOnly : full server functionality
+
+note bottom of BrowserEntry
+Browser bundles avoid static Node-core imports,
+so Next.js client compilation succeeds.
+end note
+@enduml

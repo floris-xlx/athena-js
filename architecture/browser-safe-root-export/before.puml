@@ -1,0 +1,35 @@
+@startuml
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontColor #000000
+skinparam componentStyle rectangle
+skinparam packageStyle rectangle
+skinparam ArrowColor #000000
+skinparam TitleFontColor #000000
+
+title Root Import Before Browser Split
+
+actor "Next.js Client Bundle" as Client
+component "@xylex-group/athena\n(dist/index.js)" as Root #FCE8E6
+component "schema/index.ts\nre-export" as Schema #FDEBD0
+component "generator/index.ts\nre-export" as Generator #FDEBD0
+component "schema/postgres-provider.ts\nimport pg" as PgProvider #F8D7DA
+component "generator/config.ts\nimport fs/path/url" as GenConfig #F8D7DA
+component "generator/pipeline.ts\nimport fs/promises" as GenPipeline #F8D7DA
+component "Next.js browser compiler" as Compiler #FFF3CD
+
+Client --> Root : import { createClient }
+Root --> Schema : static re-export
+Root --> Generator : static re-export
+Schema --> PgProvider : loads at module link time
+Generator --> GenConfig : loads at module link time
+Generator --> GenPipeline : loads at module link time
+Compiler --> PgProvider : resolve pg/net/tls
+Compiler --> GenConfig : resolve fs/path/url
+Compiler --> GenPipeline : resolve fs/promises
+Compiler --> Client : module-not-found errors
+
+note bottom of Root
+Even when only createClient is used,
+the root barrel links Node-only modules.
+end note
+@enduml
