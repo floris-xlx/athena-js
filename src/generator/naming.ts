@@ -1,4 +1,5 @@
 import type { NamingStyle } from './types.ts'
+import { slugify } from '../utils/slugify.ts'
 
 const IDENTIFIER_PATTERN = /^[A-Za-z_$][A-Za-z0-9_$]*$/
 const RESERVED_IDENTIFIERS = new Set([
@@ -106,7 +107,7 @@ export function applyNamingStyle(input: string, style: NamingStyle): string {
     case 'snake':
       return words.map(word => word.toLowerCase()).join('_')
     case 'kebab':
-      return words.map(word => word.toLowerCase()).join('-')
+      return slugify(words.join('-'))
     default:
       return input
   }

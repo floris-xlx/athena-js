@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from 'fs/promises'
+import { mkdir, stat, writeFile } from 'fs/promises'
 import { dirname, resolve } from 'path'
 import { generateArtifactsFromSnapshot } from './renderer.ts'
 import { loadGeneratorConfig } from './config.ts'
@@ -11,6 +11,19 @@ import type {
   RunGeneratorResult,
 } from './types.ts'
 
+function canOverwriteArtifact(file: GeneratedArtifact): boolean {
+  return file.kind === 'model' || file.kind === 'schema'
+}
+
+async function fileExists(path: string): Promise<boolean> {
+  try {
+    await stat(path)
+    return true
+  } catch {
+    return false
+  }
+}
+
 async function writeArtifacts(
   files: GeneratedArtifact[],
   cwd: string,
@@ -19,6 +32,9 @@ async function writeArtifacts(
 
   for (const file of files) {
     const absolutePath = resolve(cwd, file.path)
+    if (!canOverwriteArtifact(file) && await fileExists(absolutePath)) {
+      continue
+    }
     await mkdir(dirname(absolutePath), { recursive: true })
     await writeFile(absolutePath, file.content, 'utf8')
     writtenFiles.push(file.path)

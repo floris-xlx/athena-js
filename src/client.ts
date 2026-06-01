@@ -43,6 +43,49 @@ export interface AthenaClientExperimentalOptions {
    * Keeps AthenaResult shape intact and enables context-aware normalizeAthenaError(result) usage.
    */
   enableErrorNormalization?: boolean
+  /**
+   * Emit execution diagnostics for every query/mutation/RPC invocation.
+   * Includes payload, synthesized SQL, full outcome, and best-effort callsite metadata.
+   */
+  traceQueries?: boolean | AthenaQueryTraceOptions
+}
+
+export interface AthenaQueryTraceOptions {
+  /**
+   * Custom sink for trace events. Defaults to console.info.
+   */
+  logger?: (event: AthenaQueryTraceEvent) => void
+}
+
+export interface AthenaQueryTraceCallsite {
+  filePath: string
+  fileName: string
+  line: number
+  column: number
+  frame?: string
+  functionName?: string
+}
+
+export interface AthenaQueryTraceEvent {
+  timestamp: string
+  durationMs: number
+  operation: 'select' | 'insert' | 'upsert' | 'update' | 'delete' | 'rpc' | 'query'
+  endpoint: '/gateway/fetch' | '/gateway/insert' | '/gateway/update' | '/gateway/delete' | '/gateway/rpc' | '/gateway/query' | `/rpc/${string}`
+  table?: string
+  functionName?: string
+  sql: string
+  payload: unknown
+  options?: AthenaGatewayCallOptions | AthenaRpcCallOptions
+  callsite: AthenaQueryTraceCallsite | null
+  outcome?: {
+    status: number
+    error: string | null
+    errorDetails?: AthenaGatewayErrorDetails | null
+    count?: number | null
+    data: unknown
+    raw: unknown
+  }
+  thrownError?: unknown
 }
 
 type TableBuilderState = {
@@ -69,6 +112,45 @@ const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const SAFE_CAST_PATTERN = /^[a-z_][a-z0-9_]*(?:\[\])?$/i
 const ATHENA_NORMALIZED_ERROR_KEY = '__athenaNormalizedError' as const
+const QUERY_TRACE_STACK_SKIP_PATTERNS = [
+  'src\\client.ts',
+  'src/client.ts',
+  'dist\\client.',
+  'dist/client.',
+  'node_modules\\@xylex-group\\athena',
+  'node_modules/@xylex-group/athena',
+  'node:internal',
+  'internal/process',
+] as const
+
+type AthenaTraceOperation = AthenaQueryTraceEvent['operation']
+type AthenaTraceEndpoint = AthenaQueryTraceEvent['endpoint']
+
+interface AthenaTraceContext {
+  operation: AthenaTraceOperation
+  endpoint: AthenaTraceEndpoint
+  table?: string
+  functionName?: string
+  sql: string
+  payload: unknown
+  options?: AthenaGatewayCallOptions | AthenaRpcCallOptions
+}
+
+type AthenaQueryTracer = {
+  captureCallsite: () => AthenaQueryTraceCallsite | null
+  publishSuccess: <T>(
+    context: AthenaTraceContext,
+    result: AthenaResult<T>,
+    durationMs: number,
+    callsite: AthenaQueryTraceCallsite | null,
+  ) => void
+  publishFailure: (
+    context: AthenaTraceContext,
+    error: unknown,
+    durationMs: number,
+    callsite: AthenaQueryTraceCallsite | null,
+  ) => void
+}
 
 export interface MutationQuery<Result> extends PromiseLike<AthenaResult<Result>> {
   select(columns?: string | string[], options?: AthenaGatewayCallOptions): Promise<AthenaResult<Result>>
@@ -137,6 +219,167 @@ function createResultFormatter(
     const normalizedError = normalizeAthenaError(result, context)
     attachNormalizedError(result, normalizedError)
     return result
+  }
+}
+
+function parseQueryTraceCallsiteFrame(frame: string): AthenaQueryTraceCallsite | null {
+  const trimmed = frame.trim()
+  if (!trimmed) {
+    return null
+  }
+
+  let body = trimmed.replace(/^at\s+/, '')
+  if (body.startsWith('async ')) {
+    body = body.slice(6)
+  }
+
+  let functionName: string | undefined
+  let location = body
+  const wrappedMatch = body.match(/^(.*?)\s+\((.*)\)$/)
+  if (wrappedMatch) {
+    functionName = wrappedMatch[1].trim() || undefined
+    location = wrappedMatch[2].trim()
+  }
+
+  const locationMatch = location.match(/^(.*):(\d+):(\d+)$/)
+  if (!locationMatch) {
+    return null
+  }
+
+  const filePath = locationMatch[1].replace(/^file:\/\//, '')
+  const line = Number(locationMatch[2])
+  const column = Number(locationMatch[3])
+  if (!Number.isFinite(line) || !Number.isFinite(column)) {
+    return null
+  }
+
+  const normalizedPath = filePath.replace(/\\/g, '/')
+  const fileName = normalizedPath.split('/').at(-1) ?? filePath
+  return {
+    filePath,
+    fileName,
+    line,
+    column,
+    frame: trimmed,
+    functionName,
+  }
+}
+
+function captureQueryTraceCallsite(): AthenaQueryTraceCallsite | null {
+  const stack = new Error().stack
+  if (!stack) return null
+  const frames = stack
+    .split('\n')
+    .slice(2)
+    .map(frame => frame.trim())
+    .filter(Boolean)
+
+  for (const frame of frames) {
+    if (QUERY_TRACE_STACK_SKIP_PATTERNS.some(pattern => frame.includes(pattern))) {
+      continue
+    }
+    const callsite = parseQueryTraceCallsiteFrame(frame)
+    if (callsite) return callsite
+  }
+
+  const fallback = frames.find(frame => !frame.includes('captureQueryTraceCallsite'))
+  return fallback ? parseQueryTraceCallsiteFrame(fallback) : null
+}
+
+function defaultQueryTraceLogger(event: AthenaQueryTraceEvent): void {
+  const target = event.table ?? event.functionName ?? 'gateway'
+  const outcomeState = event.outcome?.error ? 'error' : 'ok'
+  const banner = `[athena-js][trace] ${event.operation.toUpperCase()} ${event.endpoint} ${target} ${event.durationMs}ms ${outcomeState}`
+  console.info(banner, event)
+}
+
+function createQueryTracer(experimental?: AthenaClientExperimentalOptions): AthenaQueryTracer | undefined {
+  const traceOption = experimental?.traceQueries
+  if (!traceOption) {
+    return undefined
+  }
+
+  const logger =
+    typeof traceOption === 'object' && traceOption.logger ? traceOption.logger : defaultQueryTraceLogger
+
+  const emit = (event: AthenaQueryTraceEvent) => {
+    try {
+      logger(event)
+    } catch (error) {
+      console.warn('[athena-js][trace] logger failed', error)
+    }
+  }
+
+  return {
+    captureCallsite: captureQueryTraceCallsite,
+    publishSuccess<T>(
+      context: AthenaTraceContext,
+      result: AthenaResult<T>,
+      durationMs: number,
+      callsite: AthenaQueryTraceCallsite | null,
+    ) {
+      emit({
+        timestamp: new Date().toISOString(),
+        durationMs,
+        operation: context.operation,
+        endpoint: context.endpoint,
+        table: context.table,
+        functionName: context.functionName,
+        sql: context.sql,
+        payload: context.payload,
+        options: context.options,
+        callsite,
+        outcome: {
+          status: result.status,
+          error: result.error,
+          errorDetails: result.errorDetails ?? null,
+          count: result.count ?? null,
+          data: result.data,
+          raw: result.raw,
+        },
+      })
+    },
+    publishFailure(
+      context: AthenaTraceContext,
+      error: unknown,
+      durationMs: number,
+      callsite: AthenaQueryTraceCallsite | null,
+    ) {
+      emit({
+        timestamp: new Date().toISOString(),
+        durationMs,
+        operation: context.operation,
+        endpoint: context.endpoint,
+        table: context.table,
+        functionName: context.functionName,
+        sql: context.sql,
+        payload: context.payload,
+        options: context.options,
+        callsite,
+        thrownError: error,
+      })
+    },
+  }
+}
+
+async function executeWithQueryTrace<T>(
+  tracer: AthenaQueryTracer | undefined,
+  context: AthenaTraceContext,
+  runner: () => Promise<AthenaResult<T>>,
+): Promise<AthenaResult<T>> {
+  if (!tracer) {
+    return runner()
+  }
+
+  const callsite = tracer.captureCallsite()
+  const startedAt = Date.now()
+  try {
+    const result = await runner()
+    tracer.publishSuccess(context, result, Date.now() - startedAt, callsite)
+    return result
+  } catch (error) {
+    tracer.publishFailure(context, error, Date.now() - startedAt, callsite)
+    throw error
   }
 }
 
@@ -584,6 +827,296 @@ function buildTypedSelectQuery(input: {
   return `${sqlParts.join(' ')};`
 }
 
+function sanitizeSqlComment(comment: string): string {
+  return comment.replace(/\*\//g, '* /')
+}
+
+function toSqlJsonLiteral(value: AthenaJsonValue | undefined): string {
+  if (value === undefined) return 'DEFAULT'
+  if (
+    value === null ||
+    typeof value === 'string' ||
+    typeof value === 'number' ||
+    typeof value === 'boolean'
+  ) {
+    return toSqlLiteral(value)
+  }
+  return `'${escapeSqlStringLiteral(JSON.stringify(value))}'::jsonb`
+}
+
+function conditionToDebugSqlClause(condition: AthenaGatewayCondition): string {
+  const exact = conditionToSqlClause(condition)
+  if (exact) return exact
+
+  const rawCondition = sanitizeSqlComment(JSON.stringify(condition))
+  if (!condition.column) {
+    return `TRUE /* unsupported condition: ${rawCondition} */`
+  }
+
+  const column = withCast(quoteQualifiedIdentifier(condition.column), condition.column_cast)
+  const value = condition.value
+  const rhs = withCast(toSqlJsonLiteral(value as AthenaJsonValue | undefined), condition.value_cast)
+
+  switch (condition.operator) {
+    case 'contains':
+      return `${column} @> ${rhs}`
+    case 'containedBy':
+      return `${column} <@ ${rhs}`
+    case 'not':
+      return `TRUE /* NOT expression passthrough: ${rawCondition} */`
+    case 'or':
+      return `TRUE /* OR expression passthrough: ${rawCondition} */`
+    default:
+      return `TRUE /* unsupported condition: ${rawCondition} */`
+  }
+}
+
+function resolvePagination(input: {
+  limit?: number
+  offset?: number
+  currentPage?: number
+  pageSize?: number
+}) {
+  let limit = input.limit
+  let offset = input.offset
+  if (limit === undefined && input.pageSize !== undefined) {
+    limit = input.pageSize
+  }
+  if (
+    offset === undefined &&
+    input.pageSize !== undefined &&
+    input.currentPage !== undefined &&
+    input.currentPage > 0
+  ) {
+    offset = (input.currentPage - 1) * input.pageSize
+  }
+  return { limit, offset }
+}
+
+function appendOrderLimitOffset(
+  sqlParts: string[],
+  order?: AthenaSortBy,
+  limit?: number,
+  offset?: number,
+) {
+  if (order?.field) {
+    const direction = order.direction === 'descending' ? 'DESC' : 'ASC'
+    sqlParts.push(`ORDER BY ${quoteQualifiedIdentifier(order.field)} ${direction}`)
+  }
+  if (limit !== undefined) {
+    sqlParts.push(`LIMIT ${Math.max(0, Math.trunc(limit))}`)
+  }
+  if (offset !== undefined) {
+    sqlParts.push(`OFFSET ${Math.max(0, Math.trunc(offset))}`)
+  }
+}
+
+function buildDebugSelectQuery(input: {
+  tableName: string
+  columns: string | string[]
+  conditions?: AthenaGatewayCondition[]
+  limit?: number
+  offset?: number
+  currentPage?: number
+  pageSize?: number
+  order?: AthenaSortBy
+}): string {
+  const sqlParts = [
+    `SELECT ${buildSelectColumnsClause(input.columns)} FROM ${quoteQualifiedIdentifier(input.tableName)}`,
+  ]
+  if (input.conditions?.length) {
+    const whereClauses = input.conditions.map(conditionToDebugSqlClause)
+    sqlParts.push(`WHERE ${whereClauses.join(' AND ')}`)
+  }
+  const pagination = resolvePagination(input)
+  appendOrderLimitOffset(sqlParts, input.order, pagination.limit, pagination.offset)
+  return `${sqlParts.join(' ')};`
+}
+
+function resolveDebugTableIdentifier(tableName: string | undefined): string {
+  if (!tableName?.trim()) {
+    return '"__unknown_table__"'
+  }
+  return quoteQualifiedIdentifier(tableName)
+}
+
+function buildInsertDebugSql(payload: AthenaInsertPayload): string {
+  const rows = Array.isArray(payload.insert_body)
+    ? payload.insert_body
+    : [payload.insert_body]
+  const columns: string[] = []
+  const seen = new Set<string>()
+  for (const row of rows) {
+    for (const column of Object.keys(row)) {
+      if (seen.has(column)) continue
+      seen.add(column)
+      columns.push(column)
+    }
+  }
+
+  const sqlParts = [`INSERT INTO ${quoteQualifiedIdentifier(payload.table_name)}`]
+
+  if (!rows.length || !columns.length) {
+    sqlParts.push('DEFAULT VALUES')
+    if (rows.length > 1) {
+      sqlParts.push(`/* trace: ${rows.length} rows collapsed to DEFAULT VALUES */`)
+    }
+  } else {
+    const valuesClause = rows
+      .map(row => {
+        const values = columns.map(column => {
+          const hasColumn = Object.prototype.hasOwnProperty.call(row, column)
+          if (!hasColumn) {
+            return payload.default_to_null ? 'NULL' : 'DEFAULT'
+          }
+          const rowValue = (row as Record<string, AthenaJsonValue | undefined>)[column]
+          return toSqlJsonLiteral(rowValue)
+        })
+        return `(${values.join(', ')})`
+      })
+      .join(', ')
+    const columnClause = columns.map(column => quoteQualifiedIdentifier(column)).join(', ')
+    sqlParts.push(`(${columnClause})`)
+    sqlParts.push(`VALUES ${valuesClause}`)
+  }
+
+  if (payload.on_conflict) {
+    const conflictColumns = Array.isArray(payload.on_conflict)
+      ? payload.on_conflict.map(column => quoteQualifiedIdentifier(column)).join(', ')
+      : payload.on_conflict
+    if (payload.update_body && Object.keys(payload.update_body).length > 0) {
+      const assignments = Object.entries(payload.update_body).map(([column, value]) =>
+        `${quoteQualifiedIdentifier(column)} = ${toSqlJsonLiteral(value as AthenaJsonValue)}`,
+      )
+      sqlParts.push(`ON CONFLICT (${conflictColumns}) DO UPDATE SET ${assignments.join(', ')}`)
+    } else {
+      sqlParts.push(`ON CONFLICT (${conflictColumns}) DO NOTHING`)
+    }
+  }
+
+  if (payload.columns) {
+    sqlParts.push(`RETURNING ${buildSelectColumnsClause(payload.columns)}`)
+  }
+
+  return `${sqlParts.join(' ')};`
+}
+
+function buildUpdateDebugSql(payload: AthenaUpdatePayload): string {
+  const set = payload.set ?? payload.data ?? {}
+  const assignments = Object.entries(set).map(([column, value]) =>
+    `${quoteQualifiedIdentifier(column)} = ${toSqlJsonLiteral(value as AthenaJsonValue)}`,
+  )
+  const sqlParts = [
+    `UPDATE ${resolveDebugTableIdentifier(payload.table_name)} SET ${assignments.length ? assignments.join(', ') : '/* empty set */'}`,
+  ]
+  if (payload.conditions?.length) {
+    const whereClauses = payload.conditions.map(conditionToDebugSqlClause)
+    sqlParts.push(`WHERE ${whereClauses.join(' AND ')}`)
+  }
+  const pagination = resolvePagination({
+    currentPage: payload.current_page,
+    pageSize: payload.page_size,
+  })
+  appendOrderLimitOffset(sqlParts, payload.sort_by, pagination.limit, pagination.offset)
+  if (payload.columns) {
+    sqlParts.push(`RETURNING ${buildSelectColumnsClause(payload.columns)}`)
+  }
+  return `${sqlParts.join(' ')};`
+}
+
+function buildDeleteDebugSql(payload: AthenaDeletePayload): string {
+  const sqlParts = [`DELETE FROM ${quoteQualifiedIdentifier(payload.table_name)}`]
+  const whereClauses: string[] = []
+  if (payload.resource_id) {
+    whereClauses.push(`"resource_id" = ${toSqlLiteral(payload.resource_id)}`)
+  }
+  if (payload.conditions?.length) {
+    whereClauses.push(...payload.conditions.map(conditionToDebugSqlClause))
+  }
+  if (whereClauses.length) {
+    sqlParts.push(`WHERE ${whereClauses.join(' AND ')}`)
+  }
+  const pagination = resolvePagination({
+    currentPage: payload.current_page,
+    pageSize: payload.page_size,
+  })
+  appendOrderLimitOffset(sqlParts, payload.sort_by, pagination.limit, pagination.offset)
+  if (payload.columns) {
+    sqlParts.push(`RETURNING ${buildSelectColumnsClause(payload.columns)}`)
+  }
+  return `${sqlParts.join(' ')};`
+}
+
+function rpcFilterToSqlClause(filter: AthenaRpcFilter): string {
+  const column = quoteQualifiedIdentifier(filter.column)
+  const value = filter.value
+  switch (filter.operator) {
+    case 'eq':
+    case 'neq':
+    case 'gt':
+    case 'gte':
+    case 'lt':
+    case 'lte':
+    case 'like':
+    case 'ilike': {
+      if (value === undefined || Array.isArray(value)) {
+        return `TRUE /* unsupported rpc filter: ${sanitizeSqlComment(JSON.stringify(filter))} */`
+      }
+      const operatorMap = {
+        eq: '=',
+        neq: '!=',
+        gt: '>',
+        gte: '>=',
+        lt: '<',
+        lte: '<=',
+        like: 'LIKE',
+        ilike: 'ILIKE',
+      } as const
+      return `${column} ${operatorMap[filter.operator]} ${toSqlLiteral(value)}`
+    }
+    case 'is':
+      if (value === null) return `${column} IS NULL`
+      if (value === true) return `${column} IS TRUE`
+      if (value === false) return `${column} IS FALSE`
+      return `TRUE /* unsupported rpc filter: ${sanitizeSqlComment(JSON.stringify(filter))} */`
+    case 'in':
+      if (!Array.isArray(value)) {
+        return `TRUE /* unsupported rpc filter: ${sanitizeSqlComment(JSON.stringify(filter))} */`
+      }
+      if (value.length === 0) return 'FALSE'
+      return `${column} IN (${value.map(item => toSqlLiteral(item)).join(', ')})`
+    default:
+      return `TRUE /* unsupported rpc filter: ${sanitizeSqlComment(JSON.stringify(filter))} */`
+  }
+}
+
+function buildRpcDebugSql(payload: AthenaRpcPayload): string {
+  const argsEntries = payload.args ? Object.entries(payload.args) : []
+  const argsClause = argsEntries
+    .map(([key, value]) => `${quoteQualifiedIdentifier(key)} => ${toSqlJsonLiteral(value as AthenaJsonValue)}`)
+    .join(', ')
+  const functionRef = payload.schema
+    ? `${quoteQualifiedIdentifier(payload.schema)}.${quoteQualifiedIdentifier(payload.function)}`
+    : quoteQualifiedIdentifier(payload.function)
+  const sqlParts = [
+    `SELECT ${payload.select ? quoteSelectColumnsExpression(payload.select) : '*'} FROM ${functionRef}(${argsClause})`,
+  ]
+  if (payload.filters?.length) {
+    sqlParts.push(`WHERE ${payload.filters.map(rpcFilterToSqlClause).join(' AND ')}`)
+  }
+  if (payload.order?.column) {
+    const direction = payload.order.ascending === false ? 'DESC' : 'ASC'
+    sqlParts.push(`ORDER BY ${quoteQualifiedIdentifier(payload.order.column)} ${direction}`)
+  }
+  if (payload.limit !== undefined) {
+    sqlParts.push(`LIMIT ${Math.max(0, Math.trunc(payload.limit))}`)
+  }
+  if (payload.offset !== undefined) {
+    sqlParts.push(`OFFSET ${Math.max(0, Math.trunc(payload.offset))}`)
+  }
+  return `${sqlParts.join(' ')};`
+}
+
 function createFilterMethods<Self, Row>(
   state: TableBuilderState,
   addCondition: (
@@ -788,6 +1321,7 @@ function createRpcBuilder<Row>(
   baseOptions: AthenaRpcCallOptions | undefined,
   client: ReturnType<typeof createAthenaGatewayClient>,
   formatGatewayResult: AthenaResultFormatter,
+  tracer?: AthenaQueryTracer,
 ): RpcQueryBuilder<Row> {
   const state: {
     filters: AthenaRpcFilter[]
@@ -819,8 +1353,23 @@ function createRpcBuilder<Row>(
       offset: state.offset,
       order: state.order,
     }
-    const response = await client.rpcGateway<SelectedRow[]>(payload, mergedOptions)
-    return formatGatewayResult(response, { operation: 'rpc' })
+    const endpoint: AthenaTraceEndpoint = mergedOptions?.get ? `/rpc/${functionName}` : '/gateway/rpc'
+    const sql = buildRpcDebugSql(payload)
+    return executeWithQueryTrace(
+      tracer,
+      {
+        operation: 'rpc',
+        endpoint,
+        functionName,
+        sql,
+        payload,
+        options: mergedOptions,
+      },
+      async () => {
+        const response = await client.rpcGateway<SelectedRow[]>(payload, mergedOptions)
+        return formatGatewayResult(response, { operation: 'rpc' })
+      },
+    )
   }
 
   const run = (columns?: string | string[], options?: AthenaRpcCallOptions) => {
@@ -890,6 +1439,7 @@ function createTableBuilder<
   tableName: string,
   client: ReturnType<typeof createAthenaGatewayClient>,
   formatGatewayResult: AthenaResultFormatter,
+  tracer?: AthenaQueryTracer,
 ): TableQueryBuilder<Row, Insert, Update> {
   const state: TableBuilderState = {
     conditions: [],
@@ -965,8 +1515,22 @@ function createTableBuilder<
         order: state.order,
       })
       if (query) {
-        const queryResponse = await client.queryGateway<T>({ query }, options)
-        return formatGatewayResult(queryResponse, { table: resolvedTableName, operation: 'select' })
+        const payload = { query }
+        return executeWithQueryTrace(
+          tracer,
+          {
+            operation: 'select',
+            endpoint: '/gateway/query',
+            table: resolvedTableName,
+            sql: query,
+            payload,
+            options,
+          },
+          async () => {
+            const queryResponse = await client.queryGateway<T>(payload, options)
+            return formatGatewayResult(queryResponse, { table: resolvedTableName, operation: 'select' })
+          },
+        )
       }
     }
 
@@ -984,8 +1548,31 @@ function createTableBuilder<
       count: options?.count,
       head: options?.head,
     }
-    const response = await client.fetchGateway<T>(payload, options)
-    return formatGatewayResult(response, { table: resolvedTableName, operation: 'select' })
+    const sql = buildDebugSelectQuery({
+      tableName: resolvedTableName,
+      columns,
+      conditions,
+      limit: state.limit,
+      offset: state.offset,
+      currentPage: state.currentPage,
+      pageSize: state.pageSize,
+      order: state.order,
+    })
+    return executeWithQueryTrace(
+      tracer,
+      {
+        operation: 'select',
+        endpoint: '/gateway/fetch',
+        table: resolvedTableName,
+        sql,
+        payload,
+        options,
+      },
+      async () => {
+        const response = await client.fetchGateway<T>(payload, options)
+        return formatGatewayResult(response, { table: resolvedTableName, operation: 'select' })
+      },
+    )
   }
 
   const createSelectChain = <SelectedRow>(
@@ -1050,8 +1637,22 @@ function createTableBuilder<
           if (mergedOptions?.defaultToNull !== undefined) {
             payload.default_to_null = mergedOptions.defaultToNull
           }
-          const response = await client.insertGateway<Row[]>(payload, mergedOptions)
-          return formatGatewayResult(response, { table: resolvedTableName, operation: 'insert' })
+          const sql = buildInsertDebugSql(payload)
+          return executeWithQueryTrace(
+            tracer,
+            {
+              operation: 'insert',
+              endpoint: '/gateway/insert',
+              table: resolvedTableName,
+              sql,
+              payload,
+              options: mergedOptions,
+            },
+            async () => {
+              const response = await client.insertGateway<Row[]>(payload, mergedOptions)
+              return formatGatewayResult(response, { table: resolvedTableName, operation: 'insert' })
+            },
+          )
         }
         return createMutationQuery<Row[]>(executeInsertMany)
       }
@@ -1071,8 +1672,22 @@ function createTableBuilder<
         if (mergedOptions?.defaultToNull !== undefined) {
           payload.default_to_null = mergedOptions.defaultToNull
         }
-        const response = await client.insertGateway<Row>(payload, mergedOptions)
-        return formatGatewayResult(response, { table: resolvedTableName, operation: 'insert' })
+        const sql = buildInsertDebugSql(payload)
+        return executeWithQueryTrace(
+          tracer,
+          {
+            operation: 'insert',
+            endpoint: '/gateway/insert',
+            table: resolvedTableName,
+            sql,
+            payload,
+            options: mergedOptions,
+          },
+          async () => {
+            const response = await client.insertGateway<Row>(payload, mergedOptions)
+            return formatGatewayResult(response, { table: resolvedTableName, operation: 'insert' })
+          },
+        )
       }
       return createMutationQuery<Row>(executeInsertOne)
     },
@@ -1099,8 +1714,22 @@ function createTableBuilder<
           if (mergedOptions?.defaultToNull !== undefined) {
             payload.default_to_null = mergedOptions.defaultToNull
           }
-          const response = await client.insertGateway<Row[]>(payload, mergedOptions)
-          return formatGatewayResult(response, { table: resolvedTableName, operation: 'insert' })
+          const sql = buildInsertDebugSql(payload)
+          return executeWithQueryTrace(
+            tracer,
+            {
+              operation: 'upsert',
+              endpoint: '/gateway/insert',
+              table: resolvedTableName,
+              sql,
+              payload,
+              options: mergedOptions,
+            },
+            async () => {
+              const response = await client.insertGateway<Row[]>(payload, mergedOptions)
+              return formatGatewayResult(response, { table: resolvedTableName, operation: 'insert' })
+            },
+          )
         }
         return createMutationQuery<Row[]>(executeUpsertMany)
       }
@@ -1122,8 +1751,22 @@ function createTableBuilder<
         if (mergedOptions?.defaultToNull !== undefined) {
           payload.default_to_null = mergedOptions.defaultToNull
         }
-        const response = await client.insertGateway<Row>(payload, mergedOptions)
-        return formatGatewayResult(response, { table: resolvedTableName, operation: 'insert' })
+        const sql = buildInsertDebugSql(payload)
+        return executeWithQueryTrace(
+          tracer,
+          {
+            operation: 'upsert',
+            endpoint: '/gateway/insert',
+            table: resolvedTableName,
+            sql,
+            payload,
+            options: mergedOptions,
+          },
+          async () => {
+            const response = await client.insertGateway<Row>(payload, mergedOptions)
+            return formatGatewayResult(response, { table: resolvedTableName, operation: 'insert' })
+          },
+        )
       }
       return createMutationQuery<Row>(executeUpsertOne)
     },
@@ -1146,8 +1789,22 @@ function createTableBuilder<
         if (state.pageSize !== undefined) payload.page_size = state.pageSize
         if (state.totalPages !== undefined) payload.total_pages = state.totalPages
         if (columns) payload.columns = columns
-        const response = await client.updateGateway<Row[]>(payload, mergedOptions)
-        return formatGatewayResult(response, { table: resolvedTableName, operation: 'update' })
+        const sql = buildUpdateDebugSql(payload)
+        return executeWithQueryTrace(
+          tracer,
+          {
+            operation: 'update',
+            endpoint: '/gateway/update',
+            table: resolvedTableName,
+            sql,
+            payload,
+            options: mergedOptions,
+          },
+          async () => {
+            const response = await client.updateGateway<Row[]>(payload, mergedOptions)
+            return formatGatewayResult(response, { table: resolvedTableName, operation: 'update' })
+          },
+        )
       }
       const mutation = createMutationQuery<Row[]>(executeUpdate, null)
       const updateChain = {} as UpdateChain<Row>
@@ -1177,8 +1834,22 @@ function createTableBuilder<
         if (state.pageSize !== undefined) payload.page_size = state.pageSize
         if (state.totalPages !== undefined) payload.total_pages = state.totalPages
         if (columns) payload.columns = columns
-        const response = await client.deleteGateway<Row | null>(payload, mergedOptions)
-        return formatGatewayResult(response, { table: resolvedTableName, operation: 'delete' })
+        const sql = buildDeleteDebugSql(payload)
+        return executeWithQueryTrace(
+          tracer,
+          {
+            operation: 'delete',
+            endpoint: '/gateway/delete',
+            table: resolvedTableName,
+            sql,
+            payload,
+            options: mergedOptions,
+          },
+          async () => {
+            const response = await client.deleteGateway<Row | null>(payload, mergedOptions)
+            return formatGatewayResult(response, { table: resolvedTableName, operation: 'delete' })
+          },
+        )
       }
       return createMutationQuery<Row | null>(executeDelete, null)
     },
@@ -1197,6 +1868,7 @@ function createTableBuilder<
 function createQueryBuilder(
   client: ReturnType<typeof createAthenaGatewayClient>,
   formatGatewayResult: AthenaResultFormatter,
+  tracer?: AthenaQueryTracer,
 ) {
   return async function query<Row = unknown>(
     query: string,
@@ -1206,8 +1878,21 @@ function createQueryBuilder(
     if (!normalizedQuery) {
       throw new Error('query requires a non-empty string')
     }
-    const response = await client.queryGateway<Row[]>({ query: normalizedQuery }, options)
-    return formatGatewayResult(response, { operation: 'query' })
+    const payload = { query: normalizedQuery }
+    return executeWithQueryTrace(
+      tracer,
+      {
+        operation: 'query',
+        endpoint: '/gateway/query',
+        sql: normalizedQuery,
+        payload,
+        options,
+      },
+      async () => {
+        const response = await client.queryGateway<Row[]>(payload, options)
+        return formatGatewayResult(response, { operation: 'query' })
+      },
+    )
   }
 }
 
@@ -1251,12 +1936,13 @@ function createClientFromConfig(config: AthenaClientConfig): AthenaSdkClientWith
     headers: config.headers,
   })
   const formatGatewayResult = createResultFormatter(config.experimental)
+  const queryTracer = createQueryTracer(config.experimental)
   const auth = createAuthClient(config.auth)
   const from: AthenaSdkClient['from'] = <
     Row = AthenaRowShape,
     Insert = Partial<Row>,
     Update = Partial<Insert>,
-  >(table: string) => createTableBuilder<Row, Insert, Update>(table, gateway, formatGatewayResult)
+  >(table: string) => createTableBuilder<Row, Insert, Update>(table, gateway, formatGatewayResult, queryTracer)
   const rpc: AthenaSdkClient['rpc'] = <Row = unknown, Args extends AthenaJsonObject = AthenaJsonObject>(
     fn: string,
     args?: Args,
@@ -1272,9 +1958,10 @@ function createClientFromConfig(config: AthenaClientConfig): AthenaSdkClientWith
       options,
       gateway,
       formatGatewayResult,
+      queryTracer,
     )
   }
-  const query = createQueryBuilder(gateway, formatGatewayResult) as AthenaSdkClient['query']
+  const query = createQueryBuilder(gateway, formatGatewayResult, queryTracer) as AthenaSdkClient['query']
   const db = createDbModule({ from, rpc, query })
 
   return {
@@ -1297,6 +1984,12 @@ export interface AthenaClientBuilder {
   client(clientName: string): AthenaClientBuilder
   /** Attach static headers to every request. */
   headers(headers: Record<string, string>): AthenaClientBuilder
+  /** Configure Athena Auth client behavior for `client.auth.*` methods. */
+  auth(config: AthenaAuthClientConfig): AthenaClientBuilder
+  /** Configure experimental client options (for example error normalization or query tracing). */
+  experimental(options: AthenaClientExperimentalOptions): AthenaClientBuilder
+  /** Apply the same options object accepted by `createClient(url, key, options)`. */
+  options(options: AthenaCreateClientOptions): AthenaClientBuilder
   /** Enable or disable health tracking metadata. */
   healthTracking(enabled: boolean): AthenaClientBuilder
   /** Build the immutable Athena SDK client. */
@@ -1310,12 +2003,53 @@ function toBackendConfig(b: BackendConfig | BackendType | undefined): BackendCon
   return typeof b === 'string' ? { type: b } : b
 }
 
+function mergeAuthClientConfig(
+  current: AthenaAuthClientConfig | undefined,
+  next: AthenaAuthClientConfig,
+): AthenaAuthClientConfig {
+  const merged: AthenaAuthClientConfig = {
+    ...(current ?? {}),
+    ...next,
+  }
+  if (current?.headers || next.headers) {
+    merged.headers = {
+      ...(current?.headers ?? {}),
+      ...(next.headers ?? {}),
+    }
+  }
+  return merged
+}
+
+function mergeExperimentalOptions(
+  current: AthenaClientExperimentalOptions | undefined,
+  next: AthenaClientExperimentalOptions,
+): AthenaClientExperimentalOptions {
+  const merged: AthenaClientExperimentalOptions = {
+    ...(current ?? {}),
+    ...next,
+  }
+  if (
+    current?.traceQueries &&
+    typeof current.traceQueries === 'object' &&
+    next.traceQueries &&
+    typeof next.traceQueries === 'object'
+  ) {
+    merged.traceQueries = {
+      ...current.traceQueries,
+      ...next.traceQueries,
+    }
+  }
+  return merged
+}
+
 class AthenaClientBuilderImpl implements AthenaClientBuilder {
   private baseUrl?: string
   private apiKey?: string
   private backendConfig: BackendConfig = DEFAULT_BACKEND
   private clientName?: string
   private defaultHeaders?: Record<string, string>
+  private authConfig?: AthenaAuthClientConfig
+  private experimentalOptions?: AthenaClientExperimentalOptions
   private isHealthTrackingEnabled = false
 
   url(url: string): AthenaClientBuilder {
@@ -1343,6 +2077,38 @@ class AthenaClientBuilderImpl implements AthenaClientBuilder {
     return this
   }
 
+  auth(config: AthenaAuthClientConfig): AthenaClientBuilder {
+    this.authConfig = mergeAuthClientConfig(this.authConfig, config)
+    return this
+  }
+
+  experimental(options: AthenaClientExperimentalOptions): AthenaClientBuilder {
+    this.experimentalOptions = mergeExperimentalOptions(this.experimentalOptions, options)
+    return this
+  }
+
+  options(options: AthenaCreateClientOptions): AthenaClientBuilder {
+    if (options.client !== undefined) {
+      this.clientName = options.client
+    }
+    if (options.backend !== undefined) {
+      this.backendConfig = toBackendConfig(options.backend)
+    }
+    if (options.headers !== undefined) {
+      this.defaultHeaders = {
+        ...(this.defaultHeaders ?? {}),
+        ...options.headers,
+      }
+    }
+    if (options.auth !== undefined) {
+      this.authConfig = mergeAuthClientConfig(this.authConfig, options.auth)
+    }
+    if (options.experimental !== undefined) {
+      this.experimentalOptions = mergeExperimentalOptions(this.experimentalOptions, options.experimental)
+    }
+    return this
+  }
+
   healthTracking(enabled: boolean): AthenaClientBuilder {
     this.isHealthTrackingEnabled = enabled
     return this
@@ -1360,6 +2126,8 @@ class AthenaClientBuilderImpl implements AthenaClientBuilder {
       backend: this.backendConfig,
       headers: this.defaultHeaders,
       healthTracking: this.isHealthTrackingEnabled,
+      auth: this.authConfig,
+      experimental: this.experimentalOptions,
     })
   }
 }

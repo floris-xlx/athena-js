@@ -1,6 +1,7 @@
 import type { AthenaResult } from './client.ts'
 import { AthenaGatewayError, isAthenaGatewayError } from './gateway/errors.ts'
 import type { AthenaGatewayErrorCode, AthenaGatewayErrorDetails } from './gateway/types.ts'
+import { parseBooleanFlag as parseBooleanFlagUtil } from './utils/parse-boolean-flag.ts'
 
 export type AthenaErrorKind =
   | 'unique_violation'
@@ -129,29 +130,7 @@ export function parseBooleanFlag(
   rawValue: string | undefined,
   fallback: boolean,
 ): boolean {
-  if (!rawValue) return fallback
-
-  const normalized = rawValue.trim().toLowerCase()
-
-  if (
-    normalized === '1' ||
-    normalized === 'true' ||
-    normalized === 'yes' ||
-    normalized === 'on'
-  ) {
-    return true
-  }
-
-  if (
-    normalized === '0' ||
-    normalized === 'false' ||
-    normalized === 'no' ||
-    normalized === 'off'
-  ) {
-    return false
-  }
-
-  return fallback
+  return parseBooleanFlagUtil(rawValue, fallback)
 }
 
 export class AthenaError extends Error {

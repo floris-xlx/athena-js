@@ -48,8 +48,38 @@ const athena = AthenaClient.builder()
   .backend(Backend.Athena)
   .client("web-dashboard")
   .headers({ "X-App-Region": "eu" })
+  .auth({ baseUrl: process.env.ATHENA_AUTH_URL })
+  .experimental({ traceQueries: true })
   .build();
 ```
+
+You can also batch-apply `createClient`-style options in one call:
+
+```ts
+const athenaWithOptions = AthenaClient.builder()
+  .url(process.env.ATHENA_URL!)
+  .key(process.env.ATHENA_API_KEY!)
+  .options({
+    client: "web-dashboard",
+    backend: Backend.Athena,
+    headers: { "X-App-Region": "eu" },
+    auth: { baseUrl: process.env.ATHENA_AUTH_URL },
+    experimental: { traceQueries: true },
+  })
+  .build();
+```
+
+Builder output is a drop-in `createClient(...)` replacement:
+
+- same runtime surface: `from`, `db`, `rpc`, `query`, `auth`
+- same auth bindings/types under `client.auth.*`
+- same `experimental` options support (`enableErrorNormalization`, `traceQueries`)
+
+Repeated fluent configuration calls compose:
+
+- `headers(...)` + `options({ headers })` merge headers
+- `auth(...)` + `options({ auth })` merge auth config and auth headers
+- `experimental(...)` + `options({ experimental })` merge experimental flags
 
 ### `AthenaClient.fromEnvironment()` (ops-friendly)
 
@@ -58,6 +88,56 @@ import { AthenaClient } from "@xylex-group/athena";
 
 const athena = AthenaClient.fromEnvironment();
 ```
+
+## 3.1) Optional query tracing (experimental)
+
+Use this when you need to inspect exactly what executed and where the call originated.
+
+```ts
+const athena = createClient(process.env.ATHENA_URL!, process.env.ATHENA_API_KEY!, {
+  experimental: {
+    traceQueries: true,
+  },
+});
+```
+
+Every execution logs:
+
+- operation type (`select`, `insert`, `upsert`, `update`, `delete`, `rpc`, `query`)
+- endpoint and SQL text
+- payload and options
+- full outcome (`status`, `error`, `count`, `data`, `raw`)
+- invocation callsite (`filePath`, `fileName`, `line`, `column`)
+
+Custom sink:
+
+```ts
+const tracedClient = createClient(process.env.ATHENA_URL!, process.env.ATHENA_API_KEY!, {
+  experimental: {
+    traceQueries: {
+      logger(event) {
+        observability.emit("athena.query.trace", event);
+      },
+    },
+  },
+});
+```
+
+## 3.2) Utility helpers from subpath exports
+
+Use `@xylex-group/athena/utils` for runtime helpers that are intentionally not in the root package export.
+
+```ts
+import { slugify, trimTrailingSlashes, parseBooleanFlag, isLocalHostname, clearAuthCookies, proxyRequestHeaders } from "@xylex-group/athena/utils";
+
+const modelSlug = slugify("Internal User Sessions");
+const normalizedBase = trimTrailingSlashes("https://api.example.com///");
+const useNewAuthFlow = parseBooleanFlag(process.env.NEW_AUTH_FLOW, false);
+const localHost = isLocalHostname("api.localhost");
+const upstreamHeaders = proxyRequestHeaders(request);
+```
+
+`clearAuthCookies()` is browser-oriented and safely no-ops in server runtimes.
 
 ## 4) Read data with table builders
 

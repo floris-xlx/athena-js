@@ -1,6 +1,7 @@
 import {
   createTypedClient,
   createClient,
+  AthenaClient,
   createModelFormAdapter,
   defineGeneratorConfig,
   defineDatabase,
@@ -60,11 +61,44 @@ declare function acceptsUserArrayInsertMutation(
 ): void
 
 const client = createClient("https://mirror3.athena-db.com", "api-key")
+const fluentBuilderClient = AthenaClient.builder()
+  .url("https://mirror3.athena-db.com")
+  .key("api-key")
+  .auth({ baseUrl: "https://auth.example.com/api/auth" })
+  .experimental({ traceQueries: true })
+  .options({
+    client: "typed-client",
+    headers: { "X-App-Source": "type-test" },
+  })
+  .build()
+const createClientDropIn: typeof fluentBuilderClient = createClient(
+  'https://mirror3.athena-db.com',
+  'api-key',
+  {
+    auth: { baseUrl: 'https://auth.example.com/api/auth' },
+  },
+)
+const builderDropIn: ReturnType<typeof createClient> = fluentBuilderClient
 const experimentalClient = createClient("https://mirror3.athena-db.com", "api-key", {
-  experimental: { enableErrorNormalization: true },
+  experimental: {
+    enableErrorNormalization: true,
+    traceQueries: {
+      logger: event => {
+        acceptsString(event.operation)
+        acceptsString(event.sql)
+      },
+    },
+  },
 })
 const authSessionResult = client.auth.getSession()
+const builderAuthSessionResult = fluentBuilderClient.auth.getSession()
 authSessionResult.then(result => {
+  if (result.ok) {
+    const sessionId = result.data?.session.id
+    if (sessionId) acceptsString(sessionId)
+  }
+})
+builderAuthSessionResult.then(result => {
   if (result.ok) {
     const sessionId = result.data?.session.id
     if (sessionId) acceptsString(sessionId)
@@ -116,6 +150,7 @@ client.rpc<UserRow>('list_users').select().then(result => acceptsCountValue(resu
 acceptsUserArrayPromise(client.rpc<UserRow>('list_users').order('created_at').range(0, 24).select())
 acceptsMaybeUserPromise(client.rpc<UserRow>('list_users').order('created_at', { ascending: false }).single())
 acceptsUserPromise(experimentalClient.from<UserRow>('users').insert({ id: "3", name: "Ciri" }).select())
+acceptsUserArrayPromiseLike(fluentBuilderClient.from<UserRow>('users').select())
 acceptsUserArrayPromiseLike(client.db.select<UserRow>('users'))
 acceptsMaybeUserPromise(client.db.select<UserRow>('users').single())
 acceptsUserPromise(client.db.insert<UserRow>('users', { id: "4", name: "Geralt" }).select())
@@ -179,9 +214,14 @@ declare function acceptsUserMutationOptions(
   value: UseMutationOptions<{ name: string }, AthenaResult<UserRow>, UserRow>,
 ): void
 declare function acceptsAthenaStateAdapter(value: AthenaStateAdapter): void
+declare function acceptsCreateClientCompatible(value: ReturnType<typeof createClient>): void
+declare function acceptsBuilderCompatible(value: typeof fluentBuilderClient): void
 
 const queryHookResult = {} as UseQueryResult<UserRow[]>
 acceptsUserQueryHookResult(queryHookResult)
+acceptsCreateClientCompatible(fluentBuilderClient)
+acceptsBuilderCompatible(createClientDropIn)
+acceptsCreateClientCompatible(builderDropIn)
 
 const mutationHookResult = {} as UseMutationResult<{ name: string }, UserRow>
 acceptsUserMutationHookResult(mutationHookResult)

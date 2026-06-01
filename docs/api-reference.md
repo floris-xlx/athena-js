@@ -56,12 +56,124 @@ function createClient(
     auth?: AthenaAuthClientConfig
     experimental?: {
       enableErrorNormalization?: boolean
+      traceQueries?: boolean | AthenaQueryTraceOptions
     }
   },
 ): AthenaSdkClientWithAuth
 ```
 
 `experimental.enableErrorNormalization` pre-attaches normalized error metadata to failed `AthenaResult` values while preserving the existing `AthenaResult<T>` contract.
+`experimental.traceQueries` emits detailed query execution diagnostics for every runtime call.
+
+### `AthenaQueryTraceOptions`
+
+```ts
+interface AthenaQueryTraceOptions {
+  logger?: (event: AthenaQueryTraceEvent) => void
+}
+```
+
+### `AthenaQueryTraceEvent`
+
+```ts
+interface AthenaQueryTraceEvent {
+  timestamp: string
+  durationMs: number
+  operation: "select" | "insert" | "upsert" | "update" | "delete" | "rpc" | "query"
+  endpoint:
+    | "/gateway/fetch"
+    | "/gateway/insert"
+    | "/gateway/update"
+    | "/gateway/delete"
+    | "/gateway/rpc"
+    | "/gateway/query"
+    | `/rpc/${string}`
+  table?: string
+  functionName?: string
+  sql: string
+  payload: unknown
+  options?: AthenaGatewayCallOptions | AthenaRpcCallOptions
+  callsite: AthenaQueryTraceCallsite | null
+  outcome?: {
+    status: number
+    error: string | null
+    errorDetails?: AthenaGatewayErrorDetails | null
+    count?: number | null
+    data: unknown
+    raw: unknown
+  }
+  thrownError?: unknown
+}
+
+interface AthenaQueryTraceCallsite {
+  filePath: string
+  fileName: string
+  line: number
+  column: number
+  frame?: string
+  functionName?: string
+}
+```
+
+### `@xylex-group/athena/utils` subpath
+
+```ts
+import { slugify, trimTrailingSlashes, parseBooleanFlag, isLocalHostname, clearAuthCookies, proxyRequestHeaders } from "@xylex-group/athena/utils"
+```
+
+```ts
+function slugify(input: string): string
+```
+
+- lowercases
+- replaces non `[a-z0-9]` groups with `-`
+- trims leading/trailing `-`
+- caps output length at `64`
+
+```ts
+function trimTrailingSlashes(value: string): string
+```
+
+Removes one or more trailing `/` characters from a string.
+
+```ts
+function parseBooleanFlag(rawValue: string | undefined, fallback: boolean): boolean
+```
+
+Parses common boolean flag tokens (`1/0`, `true/false`, `yes/no`, `on/off`) and returns `fallback` for empty or unrecognized input.
+
+```ts
+function isLocalHostname(hostname: string): boolean
+```
+
+Returns `true` for local/loopback hosts such as:
+
+- `localhost` and `*.localhost`
+- `127.0.0.1` and `127.*.*.*`
+- `::1`, `[::1]`, `0:0:0:0:0:0:0:1`
+
+```ts
+interface ClearAuthCookiesOptions {
+  prefixes?: string[]
+  hostname?: string
+  path?: string
+  cookieHeader?: string
+}
+
+function clearAuthCookies(options?: ClearAuthCookiesOptions): string[]
+```
+
+`clearAuthCookies(...)` is browser-oriented and safely returns `[]` when no browser cookie store is available.
+
+```ts
+function proxyRequestHeaders(request: Request): Headers
+```
+
+Creates a cloned `Headers` set suitable for upstream proxy calls and normalizes forwarding headers:
+
+- removes `host`
+- sets `x-forwarded-host`, `x-forwarded-proto`, `x-forwarded-origin`, `x-forwarded-uri`
+- sets `x-forwarded-port` only when the request URL includes an explicit port
 
 ### `AthenaClient.fromEnvironment()`
 
@@ -81,12 +193,22 @@ interface AthenaClientBuilder {
   backend(backend: BackendConfig | BackendType): AthenaClientBuilder
   client(clientName: string): AthenaClientBuilder
   headers(headers: Record<string, string>): AthenaClientBuilder
+  auth(config: AthenaAuthClientConfig): AthenaClientBuilder
+  experimental(options: AthenaClientExperimentalOptions): AthenaClientBuilder
+  options(options: AthenaCreateClientOptions): AthenaClientBuilder
   healthTracking(enabled: boolean): AthenaClientBuilder
   build(): AthenaSdkClientWithAuth
 }
 ```
 
 `build()` requires both URL and key.
+
+Behavior notes:
+
+- `build()` returns `AthenaSdkClientWithAuth` (same contract as `createClient(...)`)
+- `auth(...)`, `experimental(...)`, and `options(...)` are additive
+- repeated `auth(...)`/`options({ auth })` calls merge auth headers and fields
+- repeated `experimental(...)`/`options({ experimental })` calls merge flags (including `traceQueries` object config)
 
 ### Backend constants
 

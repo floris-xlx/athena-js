@@ -296,6 +296,163 @@ test('update chain supports filters after update (flexible ordering)', async () 
   }
 })
 
+test('AthenaClient.builder() supports auth() for auth namespace routing', async () => {
+  const calls: Array<{ url: string; init?: RequestInit }> = []
+  const originalFetch = globalThis.fetch
+  globalThis.fetch = async (url, init) => {
+    calls.push({ url: String(url), init })
+    return createMockResponse({
+      session: { id: 's_1' },
+      user: { id: 'u_1', email: 'user@example.com' },
+    }, 200)
+  }
+
+  try {
+    const client = AthenaClient.builder()
+      .url('https://athena-db.com')
+      .key('secret')
+      .auth({
+        baseUrl: 'https://auth.example.com/api/auth',
+        apiKey: 'auth-key',
+        headers: { 'X-Auth-From': 'builder' },
+      })
+      .build()
+
+    const result = await client.auth.getSession()
+
+    assert.equal(result.ok, true)
+    assert.equal(calls.length, 1)
+    assert.equal(calls[0].url, 'https://auth.example.com/api/auth/get-session')
+    const headers = calls[0].init?.headers as Record<string, string>
+    assert.equal(headers.apikey, 'auth-key')
+    assert.equal(headers['x-api-key'], 'auth-key')
+    assert.equal(headers['X-Auth-From'], 'builder')
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
+test('AthenaClient.builder() supports options() and experimental tracing', async () => {
+  const calls: Array<{ url: string; init?: RequestInit }> = []
+  const traces: Array<{ operation: string }> = []
+  const originalFetch = globalThis.fetch
+  globalThis.fetch = async (url, init) => {
+    const requestUrl = String(url)
+    calls.push({ url: requestUrl, init })
+    if (requestUrl.includes('/get-session')) {
+      return createMockResponse({
+        session: { id: 's_2' },
+        user: { id: 'u_2', email: 'user2@example.com' },
+      }, 200)
+    }
+    return createMockResponse([{ id: 1 }], 200)
+  }
+
+  try {
+    const client = AthenaClient.builder()
+      .url('https://athena-db.com')
+      .key('secret')
+      .options({
+        client: 'builder_options_client',
+        backend: 'athena',
+        headers: { 'X-Builder-Options': '1' },
+        auth: { baseUrl: 'https://auth-options.example.com/api/auth' },
+        experimental: {
+          traceQueries: {
+            logger(event) {
+              traces.push({ operation: event.operation })
+            },
+          },
+        },
+      })
+      .build()
+
+    await client.from('users').select('id').limit(1)
+    const session = await client.auth.getSession()
+
+    assert.equal(session.ok, true)
+    assert.equal(calls.length, 2)
+    assert.equal(calls[0].url.endsWith('/gateway/fetch'), true)
+    assert.equal(calls[1].url, 'https://auth-options.example.com/api/auth/get-session')
+
+    const gatewayHeaders = calls[0].init?.headers as Record<string, string>
+    assert.equal(gatewayHeaders['X-Athena-Client'], 'builder_options_client')
+    assert.equal(gatewayHeaders['X-Builder-Options'], '1')
+    assert.equal(traces.some(trace => trace.operation === 'select'), true)
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
+test('AthenaClient.builder() composes auth/experimental/options without clobbering previous values', async () => {
+  const calls: Array<{ url: string; init?: RequestInit }> = []
+  const traces: Array<{ operation: string }> = []
+  const originalFetch = globalThis.fetch
+  globalThis.fetch = async (url, init) => {
+    const requestUrl = String(url)
+    calls.push({ url: requestUrl, init })
+    if (requestUrl.includes('/get-session')) {
+      return createMockResponse({
+        session: { id: 's_3' },
+        user: { id: 'u_3', email: 'user3@example.com' },
+      }, 200)
+    }
+    return createMockResponse([{ id: 1 }], 200)
+  }
+
+  try {
+    const client = AthenaClient.builder()
+      .url('https://athena-db.com')
+      .key('secret')
+      .headers({ 'X-Base': 'base' })
+      .auth({
+        baseUrl: 'https://auth-a.example.com/api/auth',
+        headers: { 'X-Auth-A': '1' },
+      })
+      .auth({
+        baseUrl: 'https://auth-b.example.com/api/auth',
+        apiKey: 'auth-merged-key',
+        headers: { 'X-Auth-B': '1' },
+      })
+      .experimental({
+        traceQueries: {
+          logger(event) {
+            traces.push({ operation: event.operation })
+          },
+        },
+      })
+      .options({
+        headers: { 'X-Options': '1' },
+        auth: {
+          headers: { 'X-Auth-From-Options': '1' },
+        },
+        experimental: { enableErrorNormalization: true },
+      })
+      .build()
+
+    await client.from('users').select('id').limit(1)
+    const session = await client.auth.getSession()
+
+    assert.equal(session.ok, true)
+    assert.equal(calls.length, 2)
+    assert.equal(calls[1].url, 'https://auth-b.example.com/api/auth/get-session')
+
+    const gatewayHeaders = calls[0].init?.headers as Record<string, string>
+    assert.equal(gatewayHeaders['X-Base'], 'base')
+    assert.equal(gatewayHeaders['X-Options'], '1')
+    assert.equal(traces.some(trace => trace.operation === 'select'), true)
+
+    const authHeaders = calls[1].init?.headers as Record<string, string>
+    assert.equal(authHeaders.apikey, 'auth-merged-key')
+    assert.equal(authHeaders['x-api-key'], 'auth-merged-key')
+    assert.equal(authHeaders['X-Auth-A'], '1')
+    assert.equal(authHeaders['X-Auth-B'], '1')
+    assert.equal(authHeaders['X-Auth-From-Options'], '1')
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
 test('experimental.enableErrorNormalization attaches context-aware metadata on failed results', async () => {
   const originalFetch = globalThis.fetch
   globalThis.fetch = async () =>

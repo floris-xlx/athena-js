@@ -228,6 +228,37 @@ Normalized errors expose stable `kind` values (`unique_violation`, `validation`,
 
 `experimental.enableErrorNormalization` keeps the existing `AthenaResult<T>` shape intact and pre-attaches context-aware metadata so `normalizeAthenaError(result)` can resolve table/operation without extra per-call context objects.
 
+### Query tracing (experimental)
+
+```ts
+const athena = createClient(ATHENA_URL, ATHENA_API_KEY, {
+  experimental: { traceQueries: true },
+});
+```
+
+With `traceQueries: true`, the SDK logs every runtime execution (`select`, `insert`, `upsert`, `update`, `delete`, `rpc`, `query`) and includes:
+
+- the gateway endpoint used
+- synthesized SQL (or raw SQL for `query(...)` and SQL fallback reads)
+- payload and call options
+- full outcome (`status`, `error`, `count`, `data`, `raw`)
+- callsite metadata (`filePath`, `fileName`, `line`, `column`)
+
+Use a custom sink:
+
+```ts
+const athena = createClient(ATHENA_URL, ATHENA_API_KEY, {
+  experimental: {
+    traceQueries: {
+      logger(event) {
+        // Forward into your logger/observability sink
+        console.log(event.operation, event.endpoint, event.sql, event.callsite);
+      },
+    },
+  },
+});
+```
+
 ### Numeric coercion
 
 ```ts
@@ -238,6 +269,38 @@ if (maybeCaseId == null) throw new Error("Invalid case id");
 
 const caseId = assertInt(req.query.case_id, "case_id", { min: 1 });
 ```
+
+### Utilities subpath
+
+Utilities that are intentionally not exported from the root package are available from `@xylex-group/athena/utils`.
+
+```ts
+import {
+  slugify,
+  trimTrailingSlashes,
+  parseBooleanFlag,
+  isLocalHostname,
+  clearAuthCookies,
+  proxyRequestHeaders,
+} from "@xylex-group/athena/utils";
+```
+
+Examples:
+
+```ts
+const slug = slugify("Customer Success / Q4 Report"); // customer-success-q4-report
+const local = isLocalHostname("api.localhost"); // true
+const normalized = trimTrailingSlashes("https://example.com///"); // https://example.com
+const enabled = parseBooleanFlag(process.env.FEATURE_FLAG, false);
+
+// Browser-only helper (safe no-op on server runtimes)
+clearAuthCookies();
+
+// Preserve forwarded headers when proxying auth requests
+const upstreamHeaders = proxyRequestHeaders(request);
+```
+
+`clearAuthCookies()` clears cookies matching Athena/Better Auth prefixes (`athena-auth`, `__Secure-athena-auth`, `better-auth`, `__Secure-better-auth`) and also attempts parent-domain cleanup for subdomain deployments.
 
 ### Retry helper
 

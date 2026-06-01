@@ -9,7 +9,7 @@ Use these pages in sequence if you are onboarding a new codebase, or jump direct
 ### Track A - Runtime-first onboarding
 
 1. [`getting-started.md`](getting-started.md) - install, runtime client setup, query/writes/RPC, and practical guardrails
-2. [`api-reference.md`](api-reference.md) - exact signatures for the runtime client, builders, payloads, and helpers
+2. [`api-reference.md`](api-reference.md) - exact signatures for the runtime client, builders, helpers, `@xylex-group/athena/utils`, and experimental query tracing
 3. [`cli-command-reference.md`](cli-command-reference.md) - CLI commands and troubleshooting
 
 ### Track B - Typed model architecture

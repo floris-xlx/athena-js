@@ -1,5 +1,5 @@
 import { strict as assert } from 'assert'
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import { tmpdir } from 'os'
 import { test } from 'node:test'
@@ -274,6 +274,74 @@ test('runSchemaGenerator can operate in gateway-only mode without direct pg_url 
     assert.equal(content.includes('export interface PublicUsersRow'), true)
   } finally {
     restore()
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('runSchemaGenerator does not overwrite existing database/registry files but can overwrite model/schema files', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'athena-generator-overwrite-guard-'))
+  try {
+    writeFileSync(
+      join(root, 'athena.config.ts'),
+      `
+      export default {
+        provider: {
+          kind: 'postgres',
+          mode: 'direct',
+          connectionString: 'postgres://postgres:postgres@127.0.0.1:5432/phase_two',
+          database: 'phase_two',
+          schemas: ['public'],
+        },
+        output: {
+          targets: {
+            model: 'src/generated/{database_kebab}/{schema_kebab}/{model_kebab}.model.ts',
+            schema: 'src/generated/{database_kebab}/{schema_kebab}/index.ts',
+            database: 'src/generated/{database_kebab}/index.ts',
+            registry: 'src/generated/index.ts',
+          },
+        },
+      }
+      `,
+      'utf8',
+    )
+
+    const modelPath = join(root, 'src', 'generated', 'phase-two', 'public', 'users.model.ts')
+    const schemaPath = join(root, 'src', 'generated', 'phase-two', 'public', 'index.ts')
+    const databasePath = join(root, 'src', 'generated', 'phase-two', 'index.ts')
+    const registryPath = join(root, 'src', 'generated', 'index.ts')
+
+    mkdirSync(join(root, 'src', 'generated', 'phase-two', 'public'), { recursive: true })
+    mkdirSync(join(root, 'src', 'generated', 'phase-two'), { recursive: true })
+    mkdirSync(join(root, 'src', 'generated'), { recursive: true })
+
+    writeFileSync(modelPath, '// existing model that may be overwritten\n', 'utf8')
+    writeFileSync(schemaPath, '// existing schema that may be overwritten\n', 'utf8')
+    writeFileSync(databasePath, '// keep custom database content\n', 'utf8')
+    writeFileSync(registryPath, '// keep custom registry content\n', 'utf8')
+
+    const result = await runSchemaGenerator({
+      cwd: root,
+      provider: createSnapshotProvider(),
+    })
+
+    const modelContent = readFileSync(modelPath, 'utf8')
+    const schemaContent = readFileSync(schemaPath, 'utf8')
+    const databaseContent = readFileSync(databasePath, 'utf8')
+    const registryContent = readFileSync(registryPath, 'utf8')
+
+    assert.equal(modelContent.includes('export interface PublicUsersRow'), true)
+    assert.equal(schemaContent.includes('defineSchema({'), true)
+    assert.equal(databaseContent, '// keep custom database content\n')
+    assert.equal(registryContent, '// keep custom registry content\n')
+
+    assert.deepEqual(
+      result.writtenFiles.sort(),
+      [
+        'src/generated/phase-two/public/index.ts',
+        'src/generated/phase-two/public/users.model.ts',
+      ],
+    )
+  } finally {
     rmSync(root, { recursive: true, force: true })
   }
 })

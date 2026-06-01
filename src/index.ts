@@ -54,6 +54,9 @@ export {
 export { createAuthClient } from './auth/index.ts'
 export type {
   AthenaClientExperimentalOptions,
+  AthenaQueryTraceOptions,
+  AthenaQueryTraceCallsite,
+  AthenaQueryTraceEvent,
   RpcQueryBuilder,
   RpcOrderOptions,
   AthenaCreateClientOptions,

@@ -6,6 +6,7 @@ export default defineConfig({
     browser: 'src/browser.ts',
     react: 'src/react/index.ts',
     cookies: 'src/cookies/index.ts',
+    utils: 'src/utils/index.ts',
     'cli/index': 'src/cli/index.ts',
   },
   format: ['cjs', 'esm'],
