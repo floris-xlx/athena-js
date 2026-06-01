@@ -51,7 +51,12 @@ export {
   resolveProviderSchemas,
   runSchemaGenerator,
 } from './generator/index.ts'
-export { createAuthClient } from './auth/index.ts'
+export {
+  createAuthClient,
+  renderAthenaReactEmail,
+  createAuthReactEmailInput,
+  defineAuthEmailTemplate,
+} from './auth/index.ts'
 export type {
   AthenaClientExperimentalOptions,
   RpcQueryBuilder,
@@ -166,6 +171,18 @@ export type {
   AthenaDeleteUserRequest,
   AthenaDeleteUserCallbackRequest,
   AthenaDeleteUserResponse,
+  AthenaAuthReactEmailProps,
+  AthenaAuthReactEmailComponent,
+  AthenaAuthReactEmailRenderInput,
+  AthenaAuthReactEmailRenderOptions,
+  AthenaAuthReactEmailConfig,
+  AthenaAuthReactEmailEventPhase,
+  AthenaAuthReactEmailRenderEvent,
+  AthenaAuthEmailTemplateDefinition,
+  AthenaAuthEmailTemplateReactOverrides,
+  AthenaAuthEmailTemplateCreateFromDefinitionInput,
+  AthenaAuthEmailTemplateUpdateFromDefinitionInput,
+  AthenaAuthEmailTemplateBuilder,
   AthenaLinkSocialRequest,
   AthenaUnlinkAccountRequest,
   AthenaAuthSession,
