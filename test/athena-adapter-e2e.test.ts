@@ -46,7 +46,7 @@ testFn("adapter E2E: insert, select, update, delete on athena_adapter_e2e", asyn
       status: insertStatus,
     }: {
       data: AthenaAdapterE2E | null;
-      error: string | null;
+      error: { message: string } | null;
       status: number;
     } = await athena
       .from<AthenaAdapterE2E>("athena_adapter_e2e")
@@ -63,9 +63,9 @@ testFn("adapter E2E: insert, select, update, delete on athena_adapter_e2e", asyn
 
     assert.ok(
       insertStatus >= 200 && insertStatus < 300,
-      `insert unexpected status ${insertStatus} error ${insertError ?? ""}`,
+      `insert unexpected status ${insertStatus} error ${insertError?.message ?? ""}`,
     );
-    assert.equal(insertError, null, `insert error: ${insertError ?? ""}`);
+    assert.equal(insertError, null, `insert error: ${insertError?.message ?? ""}`);
     assert.equal(inserted?.id, id);
     assert.equal(inserted?.email, email);
 
@@ -75,13 +75,13 @@ testFn("adapter E2E: insert, select, update, delete on athena_adapter_e2e", asyn
       error: selectError,
     }: {
       data: AthenaAdapterE2E | null;
-      error: string | null;
+      error: { message: string } | null;
     } = await athena
       .from<AthenaAdapterE2E>("athena_adapter_e2e")
       .select("id,name,email,number,text,uuid,jsonb,created_at,updated_at")
       .eq("id", id)
       .single();
-    assert.equal(selectError, null, `select error: ${selectError ?? ""}`);
+    assert.equal(selectError, null, `select error: ${selectError?.message ?? ""}`);
     assert.equal(selectData?.email, email);
     assert.equal(selectData?.name, "E2E User");
     assert.equal(selectData?.number, 123);
@@ -93,13 +93,13 @@ testFn("adapter E2E: insert, select, update, delete on athena_adapter_e2e", asyn
     const {
       error: deleteError,
     }: {
-      error: string | null;
+      error: { message: string } | null;
     } = await athena
       .from<AthenaAdapterE2E>("athena_adapter_e2e")
       .eq("id", id)
       .delete()
       .single("id");
-    assert.equal(deleteError, null, `delete error: ${deleteError ?? ""}`);
+    assert.equal(deleteError, null, `delete error: ${deleteError?.message ?? ""}`);
   } finally {
     // Best-effort cleanup
     await athena.from("public.athena_adapter_e2e").eq("id", id).delete();

@@ -20,7 +20,7 @@ import type {
 } from './gateway/types.ts'
 import type { BackendConfig, BackendType } from './gateway/types.ts'
 import { createAthenaGatewayClient } from './gateway/client.ts'
-import { quoteQualifiedIdentifier, quoteSelectColumnsExpression } from './sql-identifiers.ts'
+import { quoteQualifiedIdentifier, quoteSelectColumnToken, quoteSelectColumnsExpression } from './sql-identifiers.ts'
 import { createAuthClient } from './auth/client.ts'
 import type { AthenaAuthBindings, AthenaAuthClientConfig } from './auth/types.ts'
 import { normalizeAthenaError } from './auxiliaries.ts'
@@ -30,17 +30,43 @@ import type { AthenaDbModule } from './db/module.ts'
 
 export interface AthenaResult<T> {
   data: T | null
-  error: string | null
+  error: AthenaResultError | null
+  statusText?: string | null
+  /**
+   * @deprecated Prefer `error?.gatewayCode`, `error?.hint`, and related fields on `error`.
+   */
   errorDetails?: AthenaGatewayErrorDetails | null
   status: number
   count?: number | null
   raw: unknown
 }
 
+export interface AthenaResultError {
+  message: string
+  code: string | null
+  athenaCode: NormalizedAthenaError['code']
+  gatewayCode?: AthenaGatewayErrorDetails['code'] | null
+  kind: NormalizedAthenaError['kind']
+  category: NormalizedAthenaError['category']
+  retryable: boolean
+  details: unknown | null
+  hint: string | null
+  status: number
+  statusText: string | null
+  constraint?: string
+  table?: string
+  operation?: string
+  endpoint?: AthenaGatewayErrorDetails['endpoint']
+  method?: AthenaGatewayErrorDetails['method']
+  requestId?: string
+  cause?: string
+  raw: unknown
+}
+
 export interface AthenaClientExperimentalOptions {
   /**
-   * Pre-compute and attach normalized error metadata to failed AthenaResult values.
-   * Keeps AthenaResult shape intact and enables context-aware normalizeAthenaError(result) usage.
+   * @deprecated Failed `AthenaResult` values now include normalized structured `error`
+   * envelopes by default. This flag is retained as a no-op compatibility switch.
    */
   enableErrorNormalization?: boolean
   /**
@@ -79,7 +105,7 @@ export interface AthenaQueryTraceEvent {
   callsite: AthenaQueryTraceCallsite | null
   outcome?: {
     status: number
-    error: string | null
+    error: AthenaResultError | null
     errorDetails?: AthenaGatewayErrorDetails | null
     count?: number | null
     data: unknown
@@ -176,9 +202,10 @@ export interface MutationQuery<Result> extends PromiseLike<AthenaResult<Result>>
 function formatResult<T>(response: AthenaGatewayResponse<T>): AthenaResult<T> {
   const result: AthenaResult<T> = {
     data: response.data ?? null,
-    error: response.error ?? null,
+    error: null,
     errorDetails: response.errorDetails ?? null,
     status: response.status,
+    statusText: response.statusText ?? null,
     raw: response.raw,
   }
   if (response.count !== undefined) {
@@ -207,18 +234,105 @@ function attachNormalizedError<T>(
 function createResultFormatter(
   experimental?: AthenaClientExperimentalOptions,
 ): AthenaResultFormatter {
-  if (!experimental?.enableErrorNormalization) {
-    return formatResult
-  }
-
+  void experimental
   return <T>(response: AthenaGatewayResponse<T>, context?: AthenaOperationContext): AthenaResult<T> => {
     const result = formatResult(response)
-    if (result.error == null) {
+    if (response.error == null && response.errorDetails == null) {
       return result
     }
-    const normalizedError = normalizeAthenaError(result, context)
+    const normalizedError = normalizeAthenaError(
+      {
+        ...result,
+        error: response.error ?? response.errorDetails?.message ?? null,
+      },
+      context,
+    )
+    result.error = createResultError(response, result, normalizedError)
     attachNormalizedError(result, normalizedError)
     return result
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+}
+
+function firstNonEmptyString(...values: unknown[]): string | undefined {
+  for (const value of values) {
+    if (typeof value === 'string' && value.trim().length > 0) {
+      return value.trim()
+    }
+  }
+  return undefined
+}
+
+function resolveStructuredErrorPayload(raw: unknown): Record<string, unknown> | null {
+  if (!isRecord(raw)) return null
+  return isRecord(raw.error) ? raw.error : raw
+}
+
+function resolveStructuredErrorDetails(payload: Record<string, unknown> | null, message: string): unknown | null {
+  if (!payload || !('details' in payload)) {
+    return null
+  }
+  const details = payload.details
+  if (details == null) {
+    return null
+  }
+  if (typeof details === 'string' && details.trim() === message.trim()) {
+    return null
+  }
+  return details
+}
+
+function createResultError<T>(
+  response: AthenaGatewayResponse<T>,
+  result: AthenaResult<T>,
+  normalized: NormalizedAthenaError,
+): AthenaResultError {
+  const rawRecord = isRecord(response.raw) ? response.raw : null
+  const payload = resolveStructuredErrorPayload(response.raw)
+  const message =
+    firstNonEmptyString(
+      response.error,
+      payload?.message,
+      payload?.error,
+      payload?.details,
+      response.errorDetails?.message,
+      normalized.message,
+    ) ?? normalized.message
+  const statusText =
+    firstNonEmptyString(response.statusText, rawRecord?.statusText) ?? null
+  const hint =
+    firstNonEmptyString(payload?.hint, response.errorDetails?.hint) ?? null
+  const code =
+    firstNonEmptyString(payload?.code) ??
+    normalized.code
+  const details =
+    resolveStructuredErrorDetails(payload, message) ??
+    response.errorDetails?.cause ??
+    null
+
+  return {
+    message,
+    code,
+    athenaCode: normalized.code,
+    gatewayCode: response.errorDetails?.code ?? null,
+    kind: normalized.kind,
+    category: normalized.category,
+    retryable: normalized.retryable,
+    details,
+    hint,
+    status: result.status,
+    statusText,
+    constraint: normalized.constraint,
+    table: normalized.table,
+    operation: normalized.operation,
+    endpoint: response.errorDetails?.endpoint,
+    method: response.errorDetails?.method,
+    requestId: response.errorDetails?.requestId,
+    cause: response.errorDetails?.cause,
+    raw: result.raw,
   }
 }
 
@@ -626,7 +740,7 @@ function withCast(expression: string, cast?: AthenaConditionCastType): string {
 
 function buildSelectColumnsClause(columns: string | string[]): string {
   if (Array.isArray(columns)) {
-    return columns.map(column => quoteQualifiedIdentifier(column)).join(', ')
+    return columns.map(column => quoteSelectColumnToken(column)).join(', ')
   }
   return quoteSelectColumnsExpression(columns)
 }

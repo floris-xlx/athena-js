@@ -102,3 +102,41 @@ test('query fallback auto-quotes simple aliased identifiers', async () => {
     restore()
   }
 })
+
+test('query fallback auto-quotes colon response aliases', async () => {
+  const { calls, restore } = mockFetch()
+  try {
+    await client
+      .from('public.type_lab')
+      .eqCast('id', '550e8400-e29b-41d4-a716-446655440000', 'uuid')
+      .select('table_alias:table, order_alias:public.type_lab.order')
+
+    const payload = JSON.parse(calls[0].init?.body as string)
+    assert.ok(
+      payload.query.includes(
+        'SELECT "table" AS "table_alias", "public"."type_lab"."order" AS "order_alias" FROM "public"."type_lab"',
+      ),
+    )
+  } finally {
+    restore()
+  }
+})
+
+test('query fallback auto-quotes colon response aliases from array selection', async () => {
+  const { calls, restore } = mockFetch()
+  try {
+    await client
+      .from('public.type_lab')
+      .eqCast('id', '550e8400-e29b-41d4-a716-446655440000', 'uuid')
+      .select(['table_alias:table', 'order_alias:public.type_lab.order'])
+
+    const payload = JSON.parse(calls[0].init?.body as string)
+    assert.ok(
+      payload.query.includes(
+        'SELECT "table" AS "table_alias", "public"."type_lab"."order" AS "order_alias" FROM "public"."type_lab"',
+      ),
+    )
+  } finally {
+    restore()
+  }
+})

@@ -73,7 +73,7 @@ Builder output is a drop-in `createClient(...)` replacement:
 
 - same runtime surface: `from`, `db`, `rpc`, `query`, `auth`
 - same auth bindings/types under `client.auth.*`
-- same `experimental` options support (`enableErrorNormalization`, `traceQueries`)
+- same `experimental` tracing support (`traceQueries`) plus compatibility acceptance of deprecated `enableErrorNormalization`
 
 Repeated fluent configuration calls compose:
 
@@ -155,6 +155,10 @@ const result = await athena
   .eq("active", true)
   .order("created_at", { ascending: false })
   .limit(25);
+
+const labeled = await athena
+  .from<UserRow>("users")
+  .select("user_id:id, user_email:email");
 ```
 
 ### Important chain behavior
@@ -162,6 +166,7 @@ const result = await athena
 - `.select(...)` returns a `SelectChain`, not a promise.
 - `await` on the chain triggers execution.
 - `.single(...)` and `.maybeSingle(...)` are read terminators.
+- String column lists support response aliases with `customName:columnName`.
 
 ```ts
 const one = await athena.from<UserRow>("users").eq("id", "u-1").single("id, email");
@@ -180,6 +185,14 @@ const page = await athena
 const usersInPublic = await athena
   .from<UserRow>("users")
   .select("id, email", { schema: "public" });
+```
+
+The `columns` string is comma-separated. To rename fields in the returned payload, use `customName:columnName`, for example:
+
+```ts
+const renamed = await athena
+  .from<UserRow>("users")
+  .select("user_id:id, user_email:email");
 ```
 
 Filter operators include:
@@ -263,10 +276,13 @@ Every operation resolves to `AthenaResult<T>`:
 
 - `data`
 - `error`
+- `statusText`
 - `errorDetails`
 - `status`
 - optional `count`
 - `raw`
+
+On failures, `error` is already a structured object with fields such as `message`, `code`, `details`, `hint`, `kind`, `table`, and `operation`.
 
 Use helpers for strict service-layer handling:
 
@@ -274,7 +290,7 @@ Use helpers for strict service-layer handling:
 import { isOk, unwrapRows, unwrapOne, requireAffected } from "@xylex-group/athena";
 
 const list = await athena.from<{ id: string }>("users").select("id");
-if (!isOk(list)) throw new Error(list.error ?? "Unknown error");
+if (!isOk(list)) throw new Error(list.error?.message ?? "Unknown error");
 const rows = unwrapRows(list);
 
 const single = await athena.from<{ id: string }>("users").eq("id", "u-1").single("id");

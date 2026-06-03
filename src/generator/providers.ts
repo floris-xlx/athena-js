@@ -28,7 +28,7 @@ class AthenaGatewayCatalogClient {
   async queryRows<T extends Record<string, unknown>>(query: string): Promise<T[]> {
     const result = await this.client.query<T>(query)
     if (result.error || result.status < 200 || result.status >= 300) {
-      throw new Error(result.error ?? `Gateway query failed with status ${result.status}`)
+      throw new Error(result.error?.message ?? `Gateway query failed with status ${result.status}`)
     }
     return result.data ?? []
   }

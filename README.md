@@ -233,9 +233,19 @@ For prompt-ready documentation handoff text, see [`docs/generator-codex-handoff-
 - `athena-rs` for Rust backend throughput
 - `athena-js` for app/tooling layers that need TypeScript contracts and frontend-facing ergonomics
 
-Every query resolves to `{ data, error, errorDetails?, status, count?, raw }`. `data` is `null` on error; `error` is `null` on success.
+Every query resolves to `{ data, error, errorDetails?, status, statusText?, count?, raw }`. `data` is `null` on error; `error` is `null` on success.
 
-For richer handling, inspect `errorDetails` (`code`, `status`, `endpoint`, `method`, `requestId`, etc.) or use `AthenaGatewayError` / `isAthenaGatewayError` from the package exports.
+Failed results now include a structured `error` object with the useful fields inline:
+
+- `message`
+- `code`
+- `details`
+- `hint`
+- `status`
+- `statusText`
+- normalized metadata such as `kind`, `table`, `operation`, and `retryable`
+
+`errorDetails` is still present as a compatibility alias for low-level gateway metadata (`gatewayCode`, `endpoint`, `method`, `requestId`, etc.).
 
 ## Reliability helper APIs
 
@@ -274,27 +284,26 @@ requireAffected(inserted, { min: 1 }, { table: "users", operation: "insert" });
 
 `requireAffected` uses `result.count`; request it on writes with `{ count: "exact" }` when you need enforced postconditions.
 
-### Error normalization
+### Structured errors by default
 
 ```ts
 import { createClient, normalizeAthenaError } from "@xylex-group/athena";
 
-const athena = createClient(ATHENA_URL, ATHENA_API_KEY, {
-  experimental: { enableErrorNormalization: true },
-});
+const athena = createClient(ATHENA_URL, ATHENA_API_KEY);
 
-const result = await athena.from("users").insert({ id: 1 }).select();
-if (result.error) {
-  const err = normalizeAthenaError(result);
-  if (err.kind === "unique_violation") {
+const { data, error, status, statusText } = await athena.from("users").insert({ id: 1 }).select();
+if (error) {
+  console.error(error);
+  console.error(error.hint ?? error.message, status, statusText);
+  if (error.kind === "unique_violation") {
     // deterministic conflict handling
   }
 }
 ```
 
-Normalized errors expose stable `kind` values (`unique_violation`, `validation`, `auth`, `rate_limit`, `transient`, etc.) plus operation metadata.
+`result.error` already carries normalized `kind` values (`unique_violation`, `validation`, `auth`, `rate_limit`, `transient`, etc.) plus operation metadata.
 
-`experimental.enableErrorNormalization` keeps the existing `AthenaResult<T>` shape intact and pre-attaches context-aware metadata so `normalizeAthenaError(result)` can resolve table/operation without extra per-call context objects.
+`normalizeAthenaError(result)` still exists when you need the normalized envelope from an arbitrary thrown value or mixed unknown input.
 
 ### Query tracing (experimental)
 

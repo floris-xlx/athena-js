@@ -453,7 +453,7 @@ test('AthenaClient.builder() composes auth/experimental/options without clobberi
   }
 })
 
-test('experimental.enableErrorNormalization attaches context-aware metadata on failed results', async () => {
+test('failed AthenaResult values include structured error metadata by default', async () => {
   const originalFetch = globalThis.fetch
   globalThis.fetch = async () =>
     createMockResponse(
@@ -462,13 +462,14 @@ test('experimental.enableErrorNormalization attaches context-aware metadata on f
     )
 
   try {
-    const athena = createClient('https://athena-db.com', 'secret', {
-      experimental: { enableErrorNormalization: true },
-    })
+    const athena = createClient('https://athena-db.com', 'secret')
     const result = await athena.from('users').insert({ id: 1 }).select()
 
     assert.equal(result.status, 409)
-    assert.equal(typeof result.error, 'string')
+    assert.equal(result.error?.message, 'duplicate key value violates unique constraint "users_id_key"')
+    assert.equal(result.error?.kind, 'unique_violation')
+    assert.equal(result.error?.operation, 'insert')
+    assert.equal(result.error?.table, 'users')
     assert.equal(Object.keys(result).includes('__athenaNormalizedError'), false)
 
     const normalized = normalizeAthenaError(result)

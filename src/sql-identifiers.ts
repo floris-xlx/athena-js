@@ -1,9 +1,34 @@
 const SIMPLE_IDENTIFIER_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/
 const COMPOSITE_IDENTIFIER_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*$/
-const ALIAS_PATTERN = /^([A-Za-z_][A-Za-z0-9_.]*)\s+(?:as\s+)?([A-Za-z_][A-Za-z0-9_]*)$/i
+const SQL_ALIAS_PATTERN = /^([A-Za-z_][A-Za-z0-9_.]*)\s+(?:as\s+)?([A-Za-z_][A-Za-z0-9_]*)$/i
+const RESPONSE_ALIAS_PATTERN = /^([A-Za-z_][A-Za-z0-9_]*)\s*:\s*([A-Za-z_][A-Za-z0-9_.]*)$/i
 
 function quoteIdentifierSegment(identifier: string): string {
   return `"${identifier.replace(/"/g, '""')}"`
+}
+
+function parseAliasedIdentifierToken(
+  token: string,
+): { baseIdentifier: string; aliasIdentifier: string } | null {
+  const responseAliasMatch = RESPONSE_ALIAS_PATTERN.exec(token)
+  if (responseAliasMatch) {
+    const [, aliasIdentifier, baseIdentifier] = responseAliasMatch
+    if (COMPOSITE_IDENTIFIER_PATTERN.test(baseIdentifier) && SIMPLE_IDENTIFIER_PATTERN.test(aliasIdentifier)) {
+      return { baseIdentifier, aliasIdentifier }
+    }
+  }
+
+  const sqlAliasMatch = SQL_ALIAS_PATTERN.exec(token)
+  if (!sqlAliasMatch) {
+    return null
+  }
+
+  const [, baseIdentifier, aliasIdentifier] = sqlAliasMatch
+  if (!COMPOSITE_IDENTIFIER_PATTERN.test(baseIdentifier) || !SIMPLE_IDENTIFIER_PATTERN.test(aliasIdentifier)) {
+    return null
+  }
+
+  return { baseIdentifier, aliasIdentifier }
 }
 
 /**
@@ -22,26 +47,31 @@ function quoteSelectToken(token: string): string {
     return quoteQualifiedIdentifier(token)
   }
 
-  const aliasMatch = ALIAS_PATTERN.exec(token)
-  if (!aliasMatch) {
+  const aliasedIdentifier = parseAliasedIdentifierToken(token)
+  if (!aliasedIdentifier) {
     return token
+  }
+  const { baseIdentifier, aliasIdentifier } = aliasedIdentifier
+  return `${quoteQualifiedIdentifier(baseIdentifier)} AS ${quoteIdentifierSegment(aliasIdentifier)}`
+}
+
+export function quoteSelectColumnToken(token: string): string {
+  const trimmed = token.trim()
+  if (!trimmed || trimmed === '*') return trimmed || '*'
+
+  const responseAliasMatch = RESPONSE_ALIAS_PATTERN.exec(trimmed)
+  if (responseAliasMatch) {
+    const [, aliasIdentifier, baseIdentifier] = responseAliasMatch
+    return `${quoteQualifiedIdentifier(baseIdentifier)} AS ${quoteIdentifierSegment(aliasIdentifier)}`
   }
 
-  const [, baseIdentifier, aliasIdentifier] = aliasMatch
-  if (!COMPOSITE_IDENTIFIER_PATTERN.test(baseIdentifier) || !SIMPLE_IDENTIFIER_PATTERN.test(aliasIdentifier)) {
-    return token
-  }
-  return `${quoteQualifiedIdentifier(baseIdentifier)} AS ${quoteIdentifierSegment(aliasIdentifier)}`
+  return quoteQualifiedIdentifier(trimmed)
 }
 
 function canAutoQuoteToken(token: string): boolean {
   if (token === '*') return true
   if (COMPOSITE_IDENTIFIER_PATTERN.test(token)) return true
-
-  const aliasMatch = ALIAS_PATTERN.exec(token)
-  if (!aliasMatch) return false
-  const [, baseIdentifier, aliasIdentifier] = aliasMatch
-  return COMPOSITE_IDENTIFIER_PATTERN.test(baseIdentifier) && SIMPLE_IDENTIFIER_PATTERN.test(aliasIdentifier)
+  return parseAliasedIdentifierToken(token) != null
 }
 
 function splitTopLevelCommaSeparated(input: string): string[] | null {

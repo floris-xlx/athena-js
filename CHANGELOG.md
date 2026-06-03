@@ -4,7 +4,8 @@
 
 ### Notes
 
-- _No unreleased changes yet._
+- Runtime query/mutation/RPC results now expose structured `error` objects on `AthenaResult<T>` by default, including `message`, `code`, `details`, `hint`, `status`, `statusText`, and normalized metadata such as `kind`/`table`/`operation`.
+- `experimental.enableErrorNormalization` is now deprecated and retained as a no-op compatibility flag because failed results inline normalized error data automatically.
 
 ## [2.2.0](https://github.com/xylex-group/athena-js/compare/v2.1.2...v2.2.0) (2026-06-01)
 
@@ -115,4 +116,3 @@
 
 - Release channel: stable
 - Tag: `v0.2.1`
-

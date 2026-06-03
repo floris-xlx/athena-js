@@ -1,0 +1,32 @@
+@startuml
+title Client Result Error Envelope (After)
+skinparam backgroundColor #FFFFFF
+skinparam componentStyle rectangle
+skinparam ArrowColor #111111
+skinparam defaultFontColor #111111
+skinparam defaultFontName Consolas
+
+actor "SDK Consumer" as Consumer #D6EAF8
+component "createClient(...)" as Client #D5F5E3
+component "Result Formatter\n(createResultFormatter)" as Formatter #F9E79F
+component "normalizeAthenaError(...)\n(internal default path)" as Normalize #FDEBD0
+component "AthenaResult<T>\n{ data, error: {\n  message, code, details, hint,\n  kind, table, operation, ...\n}, status, statusText,\nerrorDetails? }" as Result #E8DAEF
+component "Hidden metadata\n__athenaNormalizedError" as Metadata #F5CBA7
+
+Consumer --> Client : configure URL/key
+Client --> Formatter : inject into from/rpc/query paths
+Formatter --> Normalize : build normalized metadata automatically
+Normalize --> Metadata : attach non-enumerable cache
+Formatter --> Result : inline structured error envelope
+Result --> Consumer : inspect error directly
+
+note right of Result
+`errorDetails` remains as a compatibility alias
+for low-level gateway transport metadata.
+end note
+
+note bottom of Formatter
+`experimental.enableErrorNormalization`
+is retained only as a deprecated no-op.
+end note
+@enduml

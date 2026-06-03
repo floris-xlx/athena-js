@@ -161,6 +161,60 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 }
 
+function firstNonEmptyString(...values: unknown[]): string | undefined {
+  for (const value of values) {
+    if (typeof value === 'string' && value.trim().length > 0) {
+      return value.trim()
+    }
+  }
+  return undefined
+}
+
+function messageFromUnknownError(error: unknown): string | undefined {
+  if (typeof error === 'string' && error.trim().length > 0) {
+    return error.trim()
+  }
+  if (error instanceof Error && error.message.trim().length > 0) {
+    return error.message.trim()
+  }
+  if (!isRecord(error)) {
+    return undefined
+  }
+  return firstNonEmptyString(error.message, error.error, error.details)
+}
+
+function gatewayCodeFromUnknownError(error: unknown): AthenaGatewayErrorCode | undefined {
+  if (!isRecord(error) || typeof error.gatewayCode !== 'string') {
+    return undefined
+  }
+  return error.gatewayCode as AthenaGatewayErrorCode
+}
+
+function isAthenaResultErrorLike(
+  value: unknown,
+): value is {
+  message: string
+  athenaCode?: AthenaErrorCode
+  kind?: AthenaErrorKind
+  category?: AthenaErrorCategory
+  retryable?: boolean
+  status?: number
+  constraint?: string
+  table?: string
+  operation?: string
+  raw?: unknown
+} {
+  return (
+    isRecord(value) &&
+    typeof value.message === 'string' &&
+    (value.athenaCode === undefined || isAthenaErrorCode(value.athenaCode)) &&
+    (value.kind === undefined || isAthenaErrorKind(value.kind)) &&
+    (value.category === undefined || isAthenaErrorCategory(value.category)) &&
+    (value.retryable === undefined || typeof value.retryable === 'boolean') &&
+    (value.status === undefined || typeof value.status === 'number')
+  )
+}
+
 function isAthenaErrorKind(value: unknown): value is AthenaErrorKind {
   return (
     value === 'unique_violation' ||
@@ -388,15 +442,23 @@ function toAthenaGatewayError(
   }
 
   if (isAthenaResultLike(source) && source.errorDetails) {
+    const message =
+      messageFromUnknownError(source.error) ??
+      source.errorDetails.message ??
+      fallbackMessage
     return new AthenaGatewayError({
       code: source.errorDetails.code,
-      message: source.error ?? source.errorDetails.message,
+      message,
       status: source.status,
       endpoint: source.errorDetails.endpoint,
       method: source.errorDetails.method,
       requestId: source.errorDetails.requestId,
-      hint: source.errorDetails.hint,
-      cause: source.errorDetails.cause,
+      hint:
+        (isRecord(source.error) ? firstNonEmptyString(source.error.hint) : undefined) ??
+        source.errorDetails.hint,
+      cause:
+        (isRecord(source.error) ? firstNonEmptyString(source.error.cause) : undefined) ??
+        source.errorDetails.cause,
     })
   }
 
@@ -441,16 +503,63 @@ export function normalizeAthenaError(
   }
 
   if (isAthenaResultLike(resultOrError)) {
+    if (isAthenaResultErrorLike(resultOrError.error)) {
+      return {
+        kind: resultOrError.error.kind ?? classifyKind(resultOrError.status, gatewayCodeFromUnknownError(resultOrError.error), resultOrError.error.message),
+        code:
+          resultOrError.error.athenaCode ??
+          toAthenaErrorCode(
+            resultOrError.error.kind ??
+              classifyKind(
+                resultOrError.status,
+                gatewayCodeFromUnknownError(resultOrError.error),
+                resultOrError.error.message,
+              ),
+            resultOrError.error.status ?? resultOrError.status,
+            gatewayCodeFromUnknownError(resultOrError.error),
+          ),
+        category:
+          resultOrError.error.category ??
+          toAthenaErrorCategory(
+            resultOrError.error.kind ??
+              classifyKind(
+                resultOrError.status,
+                gatewayCodeFromUnknownError(resultOrError.error),
+                resultOrError.error.message,
+              ),
+            resultOrError.error.status ?? resultOrError.status,
+          ),
+        retryable:
+          resultOrError.error.retryable ??
+          isRetryable(
+            resultOrError.error.kind ??
+              classifyKind(
+                resultOrError.status,
+                gatewayCodeFromUnknownError(resultOrError.error),
+                resultOrError.error.message,
+              ),
+            resultOrError.error.status ?? resultOrError.status,
+          ),
+        status: resultOrError.error.status ?? resultOrError.status,
+        constraint: resultOrError.error.constraint,
+        table: context?.table ?? resultOrError.error.table,
+        operation: context?.operation ?? resultOrError.error.operation,
+        message: resultOrError.error.message,
+        raw: resultOrError.error.raw ?? resultOrError.raw,
+      }
+    }
+
     const details = resultOrError.errorDetails
     const message =
-      resultOrError.error ??
+      messageFromUnknownError(resultOrError.error) ??
       details?.message ??
       `Athena ${context?.operation ?? operationFromDetails(details) ?? 'request'} failed`
     const operation = context?.operation ?? operationFromDetails(details)
     const table = context?.table ?? extractTable(message)
     const constraint = extractConstraint(message)
-    const kind = classifyKind(resultOrError.status, details?.code, message)
-    const code = toAthenaErrorCode(kind, resultOrError.status, details?.code)
+    const gatewayCode = details?.code ?? gatewayCodeFromUnknownError(resultOrError.error)
+    const kind = classifyKind(resultOrError.status, gatewayCode, message)
+    const code = toAthenaErrorCode(kind, resultOrError.status, gatewayCode)
     const category = toAthenaErrorCategory(kind, resultOrError.status)
     return {
       kind,

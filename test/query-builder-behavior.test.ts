@@ -1137,7 +1137,7 @@ test('query handles error propagation', async () => {
     const result = await client.query('select * from syntax_error')
     assert.equal(result.data, null)
     assert.equal(result.status, 400)
-    assert.equal(result.error, 'invalid syntax')
+    assert.equal(result.error?.message, 'invalid syntax')
   } finally {
     globalThis.fetch = original
   }

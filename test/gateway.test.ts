@@ -266,7 +266,9 @@ test('non-2xx message still surfaces as error', async () => {
     const client = createClient('https://athena-db.com', 'secret')
     const result = await client.from('characters').insert({ name: 'Frodo' }).select('id,name')
     assert.equal(result.status, 400)
-    assert.equal(result.error, 'Validation failed')
+    assert.equal(result.error?.message, 'Validation failed')
+    assert.equal(result.error?.code, 'VALIDATION_FAILED')
+    assert.equal(result.error?.status, 400)
     assert.equal(result.errorDetails?.code, 'HTTP_ERROR')
     assert.equal(result.errorDetails?.endpoint, '/gateway/insert')
   } finally {

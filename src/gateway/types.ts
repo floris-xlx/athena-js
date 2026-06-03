@@ -213,6 +213,7 @@ export interface AthenaRpcCallOptions extends AthenaGatewayCallOptions {
 export interface AthenaGatewayResponse<T = unknown> {
   ok: boolean
   status: number
+  statusText?: string | null
   data: T | null
   count?: number | null
   error?: string

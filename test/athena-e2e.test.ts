@@ -36,7 +36,7 @@ test('e2e: insert, filter, and delete rows in test table (athena_logging client)
       insertResult.status >= 200 && insertResult.status < 300,
       `unexpected insert status: ${insertResult.status}`,
     )
-    assert.equal(insertResult.error, null, `insert failed: ${insertResult.error ?? ''}`)
+    assert.equal(insertResult.error, null, `insert failed: ${insertResult.error?.message ?? ''}`)
     const insertedData = insertResult.data as { id?: number } | { id?: number }[] | null
     if (Array.isArray(insertedData)) {
       insertedId = insertedData[0]?.id
@@ -49,7 +49,7 @@ test('e2e: insert, filter, and delete rows in test table (athena_logging client)
       .select('id,test_bool,test_text,test_number,test_json,test_time,test_uuid')
       .eq('test_text', runId)
 
-    assert.equal(fetchResult.error, null, `fetch failed: ${fetchResult.error ?? ''}`)
+    assert.equal(fetchResult.error, null, `fetch failed: ${fetchResult.error?.message ?? ''}`)
     assert.ok(Array.isArray(fetchResult.data), 'fetch should return an array')
     assert.equal(fetchResult.data?.length, 1, 'fetch should return one matching row')
     const row = fetchResult.data?.[0] as Record<string, unknown>
@@ -63,7 +63,7 @@ test('e2e: insert, filter, and delete rows in test table (athena_logging client)
 
     const expectOne = async (builder: ReturnType<typeof client.from>) => {
       const res = await builder
-      assert.equal(res.error, null, `filter failed: ${res.error ?? ''}`)
+      assert.equal(res.error, null, `filter failed: ${res.error?.message ?? ''}`)
       assert.ok(Array.isArray(res.data), 'filter should return an array')
       assert.equal(res.data?.length, 1, 'filter should return one matching row')
       const r = res.data?.[0] as Record<string, unknown>

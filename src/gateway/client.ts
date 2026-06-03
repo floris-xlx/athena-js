@@ -58,6 +58,15 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
+function nonEmptyString(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
+}
+
+function resolveStructuredErrorPayload(payload: unknown): Record<string, unknown> | null {
+  if (!isRecord(payload)) return null;
+  return isRecord(payload.error) ? payload.error : payload;
+}
+
 function resolveRequestId(headers: Headers): string | undefined {
   return (
     headers.get("x-request-id") ??
@@ -68,20 +77,31 @@ function resolveRequestId(headers: Headers): string | undefined {
 }
 
 function resolveErrorMessage(payload: unknown, fallback: string) {
-  if (isRecord(payload)) {
-    const messageCandidates = [payload.error, payload.message, payload.details];
+  const structuredPayload = resolveStructuredErrorPayload(payload);
+  if (structuredPayload) {
+    const messageCandidates = [structuredPayload.message, structuredPayload.error, structuredPayload.details];
     for (const candidate of messageCandidates) {
-      if (typeof candidate === "string" && candidate.trim().length > 0) {
-        return candidate.trim();
-      }
+      const resolved = nonEmptyString(candidate);
+      if (resolved) return resolved;
     }
   }
 
-  if (typeof payload === "string" && payload.trim().length > 0) {
-    return payload.trim();
-  }
+  const rawMessage = nonEmptyString(payload);
+  if (rawMessage) return rawMessage;
 
   return fallback;
+}
+
+function resolveErrorHint(payload: unknown): string | undefined {
+  const structuredPayload = resolveStructuredErrorPayload(payload);
+  return structuredPayload ? nonEmptyString(structuredPayload.hint) : undefined;
+}
+
+function resolveStatusText(response: Response, payload: unknown): string | null {
+  const rawStatusText = nonEmptyString(response.statusText);
+  if (rawStatusText) return rawStatusText;
+  const payloadRecord = isRecord(payload) ? payload : null;
+  return payloadRecord ? nonEmptyString(payloadRecord.statusText) ?? null : null;
 }
 
 function detailsFromError(error: AthenaGatewayError): AthenaGatewayErrorDetails {
@@ -301,6 +321,7 @@ async function callAthena<T>(
       return {
         ok: false,
         status: response.status,
+        statusText: resolveStatusText(response, parsedBody.parsed),
         data: null,
         error: invalidJsonError.message,
         errorDetails: detailsFromError(invalidJsonError),
@@ -322,11 +343,13 @@ async function callAthena<T>(
         endpoint,
         method,
         requestId,
+        hint: resolveErrorHint(parsed),
       });
 
       return {
         ok: false,
         status: response.status,
+        statusText: resolveStatusText(response, parsed),
         data: null,
         error: httpError.message,
         errorDetails: detailsFromError(httpError),
@@ -350,6 +373,7 @@ async function callAthena<T>(
     return {
       ok: true,
       status: response.status,
+      statusText: resolveStatusText(response, parsed),
       data: payloadData ?? null,
       count: payloadCount,
       error: undefined,
@@ -369,6 +393,7 @@ async function callAthena<T>(
     return {
       ok: false,
       status: 0,
+      statusText: null,
       data: null,
       error: networkError.message,
       errorDetails: detailsFromError(networkError),

@@ -69,6 +69,7 @@ export type {
   AthenaSdkClientWithAuth,
   TableQueryBuilder,
   AthenaResult,
+  AthenaResultError,
 } from "./client.js";
 export type { AthenaDbModule } from './db/module.js'
 export type {

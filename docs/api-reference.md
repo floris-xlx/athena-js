@@ -35,9 +35,32 @@ Main package auth exports include:
 Most SDK operations return:
 
 ```ts
+interface AthenaResultError {
+  message: string
+  code: string | null
+  athenaCode: AthenaErrorCode
+  gatewayCode?: AthenaGatewayErrorCode | null
+  kind: AthenaErrorKind
+  category: AthenaErrorCategory
+  retryable: boolean
+  details: unknown | null
+  hint: string | null
+  status: number
+  statusText: string | null
+  constraint?: string
+  table?: string
+  operation?: string
+  endpoint?: AthenaGatewayEndpointPath
+  method?: AthenaGatewayMethod
+  requestId?: string
+  cause?: string
+  raw: unknown
+}
+
 interface AthenaResult<T> {
   data: T | null
-  error: string | null
+  error: AthenaResultError | null
+  statusText?: string | null
   errorDetails?: AthenaGatewayErrorDetails | null
   status: number
   count?: number | null
@@ -63,7 +86,7 @@ function createClient(
 ): AthenaSdkClientWithAuth
 ```
 
-`experimental.enableErrorNormalization` pre-attaches normalized error metadata to failed `AthenaResult` values while preserving the existing `AthenaResult<T>` contract.
+`experimental.enableErrorNormalization` is deprecated and retained as a no-op compatibility flag because failed `AthenaResult` values now expose structured normalized `error` objects by default.
 `experimental.traceQueries` emits detailed query execution diagnostics for every runtime call.
 
 ### `AthenaQueryTraceOptions`
@@ -97,7 +120,7 @@ interface AthenaQueryTraceEvent {
   callsite: AthenaQueryTraceCallsite | null
   outcome?: {
     status: number
-    error: string | null
+    error: AthenaResultError | null
     errorDetails?: AthenaGatewayErrorDetails | null
     count?: number | null
     data: unknown
@@ -357,8 +380,15 @@ interface TableQueryBuilder<Row, Insert = Partial<Row>, Update = Partial<Insert>
 Notes:
 
 - `.select(...)` returns a chain, not an eager promise.
+- The `columns` string is comma-separated, and response aliases can be requested with `customName:columnName`.
 - `.delete(...)` throws if neither `id` nor `resource_id` condition is present and no `resourceId` option is supplied.
 - `.reset()` clears builder state (filters/modifiers) and reuses same table target.
+
+Example:
+
+```ts
+await athena.from("users").select("user_id:id, user_email:email")
+```
 
 ### `SelectChain<Row, SelectedRow = Row>`
 
@@ -581,6 +611,7 @@ interface AthenaQueryPayload {
 interface AthenaGatewayResponse<T = unknown> {
   ok: boolean
   status: number
+  statusText?: string | null
   data: T | null
   count?: number | null
   error?: string
