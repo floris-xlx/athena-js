@@ -6,6 +6,14 @@ function createMockResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status })
 }
 
+function assertUserCallsite(trace: AthenaQueryTraceEvent, expectedLine: number) {
+  assert.ok(trace.callsite)
+  assert.equal(trace.callsite?.fileName, 'query-trace.test.ts')
+  assert.match(trace.callsite?.filePath?.replace(/\\/g, '/') ?? '', /\/test\/query-trace\.test\.ts$/)
+  assert.equal(trace.callsite?.line, expectedLine)
+  assert.ok((trace.callsite?.column ?? 0) > 0)
+}
+
 test('experimental.traceQueries=true logs select traces with sql, outcome, and callsite', async () => {
   const captured: AthenaQueryTraceEvent[] = []
   const originalFetch = globalThis.fetch
@@ -35,14 +43,45 @@ test('experimental.traceQueries=true logs select traces with sql, outcome, and c
     assert.ok(trace.sql.includes('FROM "users"'))
     assert.equal(trace.outcome?.status, 200)
     assert.equal(trace.outcome?.error, null)
-    assert.ok(trace.callsite)
-    assert.ok((trace.callsite?.fileName?.length ?? 0) > 0)
-    assert.ok((trace.callsite?.filePath?.length ?? 0) > 0)
-    assert.ok((trace.callsite?.line ?? 0) > 0)
-    assert.ok((trace.callsite?.column ?? 0) > 0)
+    assertUserCallsite(trace, 35)
   } finally {
     globalThis.fetch = originalFetch
     console.info = originalInfo
+  }
+})
+
+test('traceQueries captures direct single and findMany callsites at the public API seam', async () => {
+  const captured: AthenaQueryTraceEvent[] = []
+  const originalFetch = globalThis.fetch
+
+  globalThis.fetch = async () => createMockResponse([{ id: 1 }], 200)
+
+  try {
+    const client = createClient('https://athena-db.com', 'secret', {
+      experimental: {
+        traceQueries: {
+          logger(event) {
+            captured.push(event)
+          },
+        },
+      },
+    })
+
+    await client.from('users').eq('id', 1).single('id')
+    await client.from('users').findMany({
+      select: {
+        id: true,
+      },
+      limit: 1,
+    })
+
+    assert.equal(captured.length, 2)
+    assert.equal(captured[0].operation, 'select')
+    assert.equal(captured[1].operation, 'select')
+    assertUserCallsite(captured[0], 70)
+    assertUserCallsite(captured[1], 71)
+  } finally {
+    globalThis.fetch = originalFetch
   }
 })
 
@@ -89,16 +128,19 @@ test('traceQueries custom logger receives upsert/rpc/query events', async () => 
     assert.equal(upsertTrace.endpoint, '/gateway/insert')
     assert.ok(upsertTrace.sql.startsWith('INSERT INTO'))
     assert.ok(upsertTrace.sql.includes('ON CONFLICT'))
+    assertUserCallsite(upsertTrace, 120)
 
     const rpcTrace = captured[1]
     assert.equal(rpcTrace.operation, 'rpc')
     assert.equal(rpcTrace.endpoint, '/gateway/rpc')
     assert.ok(rpcTrace.sql.includes('FROM "list_users"'))
+    assertUserCallsite(rpcTrace, 121)
 
     const queryTrace = captured[2]
     assert.equal(queryTrace.operation, 'query')
     assert.equal(queryTrace.endpoint, '/gateway/query')
     assert.equal(queryTrace.sql, 'select id from users')
+    assertUserCallsite(queryTrace, 122)
   } finally {
     globalThis.fetch = originalFetch
   }
@@ -131,4 +173,5 @@ test('traceQueries logs thrown rpc get validation failures', async () => {
   assert.equal(trace.operation, 'rpc')
   assert.ok(trace.thrownError)
   assert.equal(trace.outcome, undefined)
+  assertUserCallsite(trace, 166)
 })

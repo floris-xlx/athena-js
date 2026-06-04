@@ -333,6 +333,8 @@ With `traceQueries: true`, the SDK logs every runtime execution (`select`, `inse
 - full outcome (`status`, `error`, `count`, `data`, `raw`)
 - callsite metadata (`filePath`, `fileName`, `line`, `column`)
 
+For deferred chains, Athena captures that callsite from the public SDK seam that declared or finalized the operation and reuses it for the eventual network execution. That keeps traces pinned to user code instead of drifting into SDK internals when async stack shapes differ between local runs and CI.
+
 Use a custom sink:
 
 ```ts

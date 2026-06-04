@@ -89,6 +89,7 @@ function createClient(
 
 `experimental.enableErrorNormalization` is deprecated and retained as a no-op compatibility flag because failed `AthenaResult` values now expose structured normalized `error` objects by default.
 `experimental.traceQueries` emits detailed query execution diagnostics for every runtime call.
+For deferred builders, trace callsites are captured from the public SDK seam that declared or finalized the operation and are memoized through the eventual execution, so traces stay anchored to user code across local and CI stack differences.
 
 ### `AthenaQueryTraceOptions`
 

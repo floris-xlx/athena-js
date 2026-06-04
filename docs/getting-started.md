@@ -109,6 +109,8 @@ Every execution logs:
 - full outcome (`status`, `error`, `count`, `data`, `raw`)
 - invocation callsite (`filePath`, `fileName`, `line`, `column`)
 
+For deferred chains, that callsite is captured from the public Athena SDK seam that declared or finalized the operation and then reused for the eventual request. This keeps traces stable in CI and production even when async stack frames differ from local development.
+
 Custom sink:
 
 ```ts
