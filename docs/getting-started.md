@@ -198,7 +198,7 @@ const labeled = await athena
   .select("user_id:id, user_email:email");
 ```
 
-Version baseline for the `findMany(...)` examples in this section: SDK `@xylex-group/athena` `2.2.0`, Athena server `3.12.3` verified on 2026-06-04.
+Version baseline for the `findMany(...)` examples in this section: SDK `@xylex-group/athena` `2.3.0`, Athena server `3.12.3` verified on 2026-06-04.
 
 ### Important chain behavior
 

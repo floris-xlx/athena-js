@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## [2.3.0](https://github.com/xylex-group/athena-js/compare/v2.2.0...v2.3.0) (2026-06-05)
+
+- Release channel: stable
+- Tag: `v2.3.0`
+
 ### Notes
 
 - Runtime query/mutation/RPC results now expose structured `error` objects on `AthenaResult<T>` by default, including `message`, `code`, `details`, `hint`, `status`, `statusText`, and normalized metadata such as `kind`/`table`/`operation`.

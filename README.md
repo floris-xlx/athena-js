@@ -1,6 +1,6 @@
 # athena-js
 
-current version: `2.2.0`
+current version: `2.3.0`
 `@xylex-group/athena` is a database driver and API gateway SDK that lets you interact with SQL backends over HTTP through a fluent builder API. It ships a typed query builder for Node.js / server environments plus Athena-native React hooks for client-side use.
 
 ## Install
@@ -47,7 +47,7 @@ if (error) {
 }
 ```
 
-Example version baseline: SDK `@xylex-group/athena` `2.2.0`, Athena server `3.12.3` verified on 2026-06-04.
+Example version baseline: SDK `@xylex-group/athena` `2.3.0`, Athena server `3.12.3` verified on 2026-06-04.
 
 `.findMany({ select, where, orderBy, limit })` is the clean canonical read surface.
 The existing string-based `.select(...)` chain remains fully supported for compatibility,
