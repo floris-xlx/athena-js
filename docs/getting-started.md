@@ -81,6 +81,39 @@ Repeated fluent configuration calls compose:
 - `auth(...)` + `options({ auth })` merge auth config and auth headers
 - `experimental(...)` + `options({ experimental })` merge experimental flags
 
+## 3.0) Optional auth context forwarding for gateway requests
+
+If you want Athena server-side auth rollout to inspect auth context on normal query requests, the SDK can now mirror auth state into gateway headers.
+
+Forwarded/mirrored behavior:
+
+- `headers.Cookie` with an Athena auth session cookie keeps the original `Cookie` header and also adds `X-Athena-Auth-Session-Token`
+- `headers.Authorization: Bearer ...` keeps the original `Authorization` header and also adds `X-Athena-Auth-Bearer-Token`
+- `createClient(..., { auth: { bearerToken } })` mirrors that token onto gateway/query requests as `X-Athena-Auth-Bearer-Token`
+
+Server-side cookie forwarding example:
+
+```ts
+const athena = createClient(process.env.ATHENA_URL!, process.env.ATHENA_API_KEY!, {
+  headers: {
+    Cookie: request.headers.get("cookie") ?? "",
+  },
+})
+```
+
+Client-wide bearer example:
+
+```ts
+const athena = createClient(process.env.ATHENA_URL!, process.env.ATHENA_API_KEY!, {
+  auth: {
+    baseUrl: process.env.ATHENA_AUTH_URL,
+    bearerToken: process.env.ATHENA_AUTH_BEARER_TOKEN,
+  },
+})
+```
+
+For precedence rules, browser/server caveats, and rollout guidance, see [`auth-session-forwarding.md`](auth-session-forwarding.md).
+
 ### `AthenaClient.fromEnvironment()` (ops-friendly)
 
 ```ts

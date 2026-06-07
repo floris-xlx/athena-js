@@ -4,6 +4,7 @@ This page documents the exported contract surfaces of `@xylex-group/athena` and 
 
 For workflow-first onboarding, start with [`getting-started.md`](getting-started.md).
 For the full `findMany(...)` AST explanation, live route payloads, and Athena server implications, use [`findmany-ast-and-server-contract.md`](findmany-ast-and-server-contract.md).
+For detailed auth-session and bearer forwarding semantics on gateway/query requests, use [`auth-session-forwarding.md`](auth-session-forwarding.md).
 For model architecture strategy, use [`type-safety-playbook.md`](type-safety-playbook.md).
 For Athena Auth endpoint parity and per-endpoint examples, use [`auth/index.mdx`](auth/index.mdx) and [`auth-client-bindings.md`](auth-client-bindings.md).
 For exhaustive method-by-method coverage (including auth, runtime chains, react, cookies, and utils), use [`complete-method-reference.md`](complete-method-reference.md).
@@ -776,6 +777,7 @@ Behavior notes:
 - If `headers.Authorization` is `Bearer <token>`, the gateway request also sends `X-Athena-Auth-Bearer-Token` with the bare token.
 - The original `Cookie` and `Authorization` headers are still forwarded unchanged.
 - `createClient(..., { auth: { bearerToken } })` also mirrors that bearer token onto gateway requests as `X-Athena-Auth-Bearer-Token`.
+- For precedence rules, browser/server caveats, and rollout guidance, use [`auth-session-forwarding.md`](auth-session-forwarding.md).
 
 ### `AthenaRpcCallOptions`
 

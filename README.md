@@ -55,6 +55,28 @@ including alias/FK patterns like `from:sender_id(name)`.
 For the full AST model, route contract, error behavior, and Athena server implications,
 see [`docs/findmany-ast-and-server-contract.md`](docs/findmany-ast-and-server-contract.md).
 
+### Gateway auth-session forwarding
+
+If you need Athena server-side auth rollout to inspect auth context on normal query requests, the SDK now mirrors available auth state into gateway headers while still forwarding the original headers too.
+
+Current behavior:
+
+- `headers.Cookie` containing an Athena auth session cookie keeps `Cookie` and also adds `X-Athena-Auth-Session-Token`
+- `headers.Authorization: Bearer ...` keeps `Authorization` and also adds `X-Athena-Auth-Bearer-Token`
+- `createClient(..., { auth: { bearerToken } })` mirrors that token onto gateway/query requests as `X-Athena-Auth-Bearer-Token`
+
+Server-side cookie forwarding example:
+
+```ts
+const athena = createClient(ATHENA_URL, ATHENA_API_KEY, {
+  headers: {
+    Cookie: request.headers.get("cookie") ?? "",
+  },
+});
+```
+
+For the full contract, precedence rules, browser/server caveats, and rollout guidance, see [`docs/auth-session-forwarding.md`](docs/auth-session-forwarding.md).
+
 ### Auth client (Athena Auth server)
 
 If your auth backend is now Athena Auth, you can keep core login/session flows in this SDK:

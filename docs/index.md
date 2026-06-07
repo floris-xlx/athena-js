@@ -9,11 +9,12 @@ Use these pages in sequence if you are onboarding a new codebase, or jump direct
 ### Track A - Runtime-first onboarding
 
 1. [`getting-started.md`](getting-started.md) - install, runtime client setup, query/writes/RPC, schema-targeting entrypoints, and practical guardrails
-2. [`findmany-ast-and-server-contract.md`](findmany-ast-and-server-contract.md) - canonical `findMany(...)` AST semantics, transport mapping, base-table schema targeting, cross-schema relation examples, and server follow-up work
-3. [`select-column-aliases.md`](select-column-aliases.md) - response shaping with `customName:columnName`, array form, and alias behavior across reads/writes/RPC, including schema-qualified column references
-4. [`api-reference.md`](api-reference.md) - exact signatures for the runtime client, builders, helpers, `@xylex-group/athena/utils`, and experimental query tracing
-5. [`cli-command-reference.md`](cli-command-reference.md) - CLI commands and troubleshooting
-6. [`complete-method-reference.md`](complete-method-reference.md) - exhaustive, generated method-by-method reference with examples
+2. [`auth-session-forwarding.md`](auth-session-forwarding.md) - how gateway/query requests mirror Athena Auth session and bearer context into `X-Athena-Auth-*` headers
+3. [`findmany-ast-and-server-contract.md`](findmany-ast-and-server-contract.md) - canonical `findMany(...)` AST semantics, transport mapping, base-table schema targeting, cross-schema relation examples, and server follow-up work
+4. [`select-column-aliases.md`](select-column-aliases.md) - response shaping with `customName:columnName`, array form, and alias behavior across reads/writes/RPC, including schema-qualified column references
+5. [`api-reference.md`](api-reference.md) - exact signatures for the runtime client, builders, helpers, `@xylex-group/athena/utils`, and experimental query tracing
+6. [`cli-command-reference.md`](cli-command-reference.md) - CLI commands and troubleshooting
+7. [`complete-method-reference.md`](complete-method-reference.md) - exhaustive, generated method-by-method reference with examples
 
 ### Track B - Typed model architecture
 
@@ -33,7 +34,8 @@ Use these pages in sequence if you are onboarding a new codebase, or jump direct
 2. [`auth/react-email.mdx`](auth/react-email.mdx) - render `@react-email/components` payloads into admin HTML routes
 3. [`auth/react-email-api.mdx`](auth/react-email-api.mdx) - helper exports and exact integration API
 4. [`auth-client-bindings.md`](auth-client-bindings.md) - compact single-page route map
-5. [`api-reference.md`](api-reference.md) - envelope contracts and exported auth types
+5. [`auth-session-forwarding.md`](auth-session-forwarding.md) - how auth session and bearer state can be mirrored onto gateway/query requests for server-side auth rollout
+6. [`api-reference.md`](api-reference.md) - envelope contracts and exported auth types
 
 ## Concept map
 
@@ -62,5 +64,6 @@ Runtime client (createClient / AthenaClient.builder)
 - If your issue is type drift across domains: start at [`type-safety-playbook.md`](type-safety-playbook.md).
 - If your issue is generated artifacts or CI determinism: start at [`generator-config.md`](generator-config.md) and [`generator-cicd.md`](generator-cicd.md).
 - If your issue is auth endpoint parity and typed auth bindings: start at [`auth/index.mdx`](auth/index.mdx).
+- If your issue is getting Athena Auth session or bearer context onto `from(...)`, `rpc(...)`, or `query(...)` requests: start at [`auth-session-forwarding.md`](auth-session-forwarding.md).
 - If your issue is exact method signatures: use [`api-reference.md`](api-reference.md).
 - If you need a one-stop “every method + example” index: use [`complete-method-reference.md`](complete-method-reference.md).

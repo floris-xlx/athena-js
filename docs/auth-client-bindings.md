@@ -27,6 +27,10 @@ const client = createClient("http://localhost:3001", "gateway_api_key", {
 })
 ```
 
+`client.auth.*` is the auth-server client surface. It does not automatically make `from(...)`, `rpc(...)`, or `query(...)` session-aware on its own.
+
+If you want normal gateway/query requests to carry Athena Auth session or bearer context for server-side auth rollout, see [`auth-session-forwarding.md`](./auth-session-forwarding.md).
+
 ## Method map (`client.auth.*`)
 
 ### Session-level bindings
