@@ -24,16 +24,12 @@ import {
   buildAthenaGatewayUrl,
   normalizeAthenaGatewayBaseUrl,
 } from "./url.ts";
+import { getSessionCookie } from "../cookies/index.ts";
+import { buildSdkHeaderValue } from "../sdk-version.ts";
 
 const DEFAULT_CLIENT = "railway_direct";
-const FALLBACK_SDK_VERSION = "1.3.0";
 const SDK_NAME = "xylex-group/athena";
-
-const SDK_VERSION =
-  typeof process !== "undefined" && process?.env?.npm_package_version
-    ? process.env.npm_package_version
-    : FALLBACK_SDK_VERSION;
-const SDK_HEADER_VALUE = `${SDK_NAME} ${SDK_VERSION}`;
+const SDK_HEADER_VALUE = buildSdkHeaderValue(SDK_NAME);
 
 function parseResponseBody(rawText: string, contentType: string | null) {
   if (!rawText) {
@@ -58,6 +54,51 @@ function parseResponseBody(rawText: string, contentType: string | null) {
 
 function normalizeHeaderValue(value?: string | null) {
   return value ? value : undefined;
+}
+
+function resolveHeaderValue(
+  headers: Record<string, string>,
+  candidates: string[],
+): string | undefined {
+  for (const candidate of candidates) {
+    const direct = normalizeHeaderValue(headers[candidate]);
+    if (direct) return direct;
+  }
+
+  const loweredCandidates = new Set(candidates.map(candidate => candidate.toLowerCase()));
+  for (const [key, value] of Object.entries(headers)) {
+    if (!loweredCandidates.has(key.toLowerCase())) {
+      continue;
+    }
+    const normalized = normalizeHeaderValue(value);
+    if (normalized) return normalized;
+  }
+
+  return undefined;
+}
+
+function resolveBearerTokenFromAuthorizationHeader(
+  headers: Record<string, string>,
+): string | undefined {
+  const authorization = resolveHeaderValue(headers, ["Authorization"]);
+  if (!authorization) {
+    return undefined;
+  }
+
+  const match = authorization.match(/^Bearer\s+(.+)$/i);
+  const token = match?.[1]?.trim();
+  return token ? token : undefined;
+}
+
+function resolveSessionTokenFromCookieHeader(
+  headers: Record<string, string>,
+): string | undefined {
+  const cookie = resolveHeaderValue(headers, ["Cookie"]);
+  if (!cookie) {
+    return undefined;
+  }
+
+  return getSessionCookie(new Headers({ cookie })) ?? undefined;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -209,7 +250,7 @@ function buildRpcGetEndpoint(payload: AthenaRpcPayload): AthenaGatewayEndpointPa
           status: 0,
         });
       }
-      query.set(filter.column, toRpcFilterQueryValue(filter));
+      query.append(filter.column, toRpcFilterQueryValue(filter));
     }
   }
 
@@ -274,6 +315,24 @@ function buildHeaders(
   if (finalApiKey) {
     headers["apikey"] = finalApiKey;
     headers["x-api-key"] = headers["x-api-key"] ?? finalApiKey;
+  }
+
+  const explicitSessionToken = resolveHeaderValue(extraHeaders, [
+    "X-Athena-Auth-Session-Token",
+  ]);
+  const derivedSessionToken =
+    explicitSessionToken ?? resolveSessionTokenFromCookieHeader(extraHeaders);
+  if (derivedSessionToken) {
+    headers["X-Athena-Auth-Session-Token"] = derivedSessionToken;
+  }
+
+  const explicitBearerToken = resolveHeaderValue(extraHeaders, [
+    "X-Athena-Auth-Bearer-Token",
+  ]);
+  const derivedBearerToken =
+    explicitBearerToken ?? resolveBearerTokenFromAuthorizationHeader(extraHeaders);
+  if (derivedBearerToken) {
+    headers["X-Athena-Auth-Bearer-Token"] = derivedBearerToken;
   }
 
   const athenaClientKeys = ["x-athena-client", "X-Athena-Client"];

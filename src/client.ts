@@ -618,10 +618,19 @@ function toSingleResult<Result>(response: AthenaResult<Result>): AthenaResult<Mu
   }
 }
 
-function mergeOptions<T extends object>(...options: Array<T | undefined>): T | undefined {
+function mergeOptions<T extends { headers?: Record<string, string> }>(
+  ...options: Array<T | undefined>
+): T | undefined {
   return options.reduce<T | undefined>((acc, next) => {
     if (!next) return acc
-    return { ...acc, ...next }
+    const merged = { ...(acc ?? {}), ...next } as T
+    if (acc?.headers || next.headers) {
+      merged.headers = {
+        ...(acc?.headers ?? {}),
+        ...(next.headers ?? {}),
+      }
+    }
+    return merged
   }, undefined)
 }
 
@@ -2241,18 +2250,28 @@ export interface AthenaClientConfig {
   client?: string
   backend?: BackendConfig
   headers?: Record<string, string>
-  healthTracking?: boolean
   auth?: AthenaAuthClientConfig
   experimental?: AthenaClientExperimentalOptions
 }
 
 function createClientFromConfig(config: AthenaClientConfig): AthenaSdkClientWithAuth {
+  const gatewayHeaders: Record<string, string> = {
+    ...(config.headers ?? {}),
+  }
+  if (
+    config.auth?.bearerToken &&
+    gatewayHeaders['X-Athena-Auth-Bearer-Token'] === undefined &&
+    gatewayHeaders['x-athena-auth-bearer-token'] === undefined
+  ) {
+    gatewayHeaders['X-Athena-Auth-Bearer-Token'] = config.auth.bearerToken
+  }
+
   const gateway = createAthenaGatewayClient({
     baseUrl: config.baseUrl,
     apiKey: config.apiKey,
     client: config.client,
     backend: config.backend,
-    headers: config.headers,
+    headers: gatewayHeaders,
   })
   const formatGatewayResult = createResultFormatter(config.experimental)
   const queryTracer = createQueryTracer(config.experimental)
@@ -2321,8 +2340,6 @@ export interface AthenaClientBuilder {
   experimental(options: AthenaClientExperimentalOptions): AthenaClientBuilder
   /** Apply the same options object accepted by `createClient(url, key, options)`. */
   options(options: AthenaCreateClientOptions): AthenaClientBuilder
-  /** Enable or disable health tracking metadata. */
-  healthTracking(enabled: boolean): AthenaClientBuilder
   /** Build the immutable Athena SDK client. */
   build(): AthenaSdkClientWithAuth
 }
@@ -2381,7 +2398,6 @@ class AthenaClientBuilderImpl implements AthenaClientBuilder {
   private defaultHeaders?: Record<string, string>
   private authConfig?: AthenaAuthClientConfig
   private experimentalOptions?: AthenaClientExperimentalOptions
-  private isHealthTrackingEnabled = false
 
   url(url: string): AthenaClientBuilder {
     this.baseUrl = url
@@ -2440,11 +2456,6 @@ class AthenaClientBuilderImpl implements AthenaClientBuilder {
     return this
   }
 
-  healthTracking(enabled: boolean): AthenaClientBuilder {
-    this.isHealthTrackingEnabled = enabled
-    return this
-  }
-
   build(): AthenaSdkClientWithAuth {
     if (!this.baseUrl || !this.apiKey) {
       throw new Error('AthenaClient requires url and key; call .url() and .key() before .build()')
@@ -2456,7 +2467,6 @@ class AthenaClientBuilderImpl implements AthenaClientBuilder {
       client: this.clientName,
       backend: this.backendConfig,
       headers: this.defaultHeaders,
-      healthTracking: this.isHealthTrackingEnabled,
       auth: this.authConfig,
       experimental: this.experimentalOptions,
     })

@@ -413,6 +413,31 @@ test('AthenaClient.builder() supports options() and experimental tracing', async
   }
 })
 
+test('createClient mirrors auth bearerToken onto gateway requests', async () => {
+  const calls: Array<{ url: string; init?: RequestInit }> = []
+  const originalFetch = globalThis.fetch
+  globalThis.fetch = async (url, init) => {
+    calls.push({ url: String(url), init })
+    return createMockResponse([{ id: 1 }], 200)
+  }
+
+  try {
+    const client = createClient('https://athena-db.com', 'secret', {
+      auth: {
+        bearerToken: 'gateway-auth-bearer',
+      },
+    })
+
+    await client.from('users').select('id').limit(1)
+
+    assert.equal(calls.length, 1)
+    const headers = calls[0].init?.headers as Record<string, string>
+    assert.equal(headers['X-Athena-Auth-Bearer-Token'], 'gateway-auth-bearer')
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
 test('AthenaClient.builder() composes auth/experimental/options without clobbering previous values', async () => {
   const calls: Array<{ url: string; init?: RequestInit }> = []
   const traces: Array<{ operation: string }> = []

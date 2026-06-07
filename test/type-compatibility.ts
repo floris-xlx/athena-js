@@ -235,6 +235,47 @@ users.findMany({
   },
 })
 
+users.findMany({
+  select: {
+    id: true,
+    name: true,
+  },
+  where: {
+    or: [{ id: 'u-1' }, { name: { ilike: '%ali%' } }],
+    not: { name: { ilike: '%blocked%' } },
+  },
+})
+
+users.findMany({
+  select: {
+    id: true,
+  },
+  where: {
+    // @ts-expect-error boolean or clauses must target exactly one known column
+    or: [{ id: 'u-1', name: 'Alice' }],
+  },
+})
+
+users.findMany({
+  select: {
+    id: true,
+  },
+  where: {
+    // @ts-expect-error boolean not clauses only allow a single lossless scalar operator
+    not: { name: { like: 'A%', ilike: '%a%' } },
+  },
+})
+
+users.findMany({
+  select: {
+    id: true,
+  },
+  where: {
+    // @ts-expect-error boolean not clauses reject array-valued operators
+    not: { id: { in: ['u-1'] } },
+  },
+})
+
 acceptsMaybeUserPromise(users.single())
 acceptsMaybeUserPromise(users.maybeSingle())
 

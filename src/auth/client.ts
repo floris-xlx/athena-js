@@ -72,16 +72,11 @@ import type {
   AthenaUsernameSignInRequest,
 } from './types.ts'
 import { resolveReactEmailPayloadFields } from './react-email.ts'
+import { buildSdkHeaderValue } from '../sdk-version.ts'
 
 const DEFAULT_AUTH_BASE_URL = 'http://localhost:3001/api/auth'
-const FALLBACK_SDK_VERSION = '1.0.0'
 const SDK_NAME = 'xylex-group/athena-auth'
-
-const SDK_VERSION =
-  typeof process !== 'undefined' && process?.env?.npm_package_version
-    ? process.env.npm_package_version
-    : FALLBACK_SDK_VERSION
-const SDK_HEADER_VALUE = `${SDK_NAME} ${SDK_VERSION}`
+const SDK_HEADER_VALUE = buildSdkHeaderValue(SDK_NAME)
 
 type AuthRequestContext = {
   endpoint: AthenaAuthEndpointPath

@@ -338,7 +338,6 @@ interface AthenaClientBuilder {
   auth(config: AthenaAuthClientConfig): AthenaClientBuilder
   experimental(options: AthenaClientExperimentalOptions): AthenaClientBuilder
   options(options: AthenaCreateClientOptions): AthenaClientBuilder
-  healthTracking(enabled: boolean): AthenaClientBuilder
   build(): AthenaSdkClientWithAuth
 }
 ```
@@ -557,10 +556,54 @@ type AthenaWhereOperatorInput = {
   containedBy?: AthenaConditionArrayValue
 }
 
+type AthenaWhereColumnInput<Row = Record<string, AthenaJsonValue | undefined>> =
+  Partial<Record<keyof Row & string, AthenaConditionValue | AthenaWhereOperatorInput>>
+
+type AthenaWhereBooleanSafeOperatorInput = {
+  eq?: AthenaConditionValue
+  neq?: AthenaConditionValue
+  gt?: AthenaConditionValue
+  gte?: AthenaConditionValue
+  lt?: AthenaConditionValue
+  lte?: AthenaConditionValue
+  like?: AthenaConditionValue
+  ilike?: AthenaConditionValue
+  is?: AthenaConditionValue
+}
+
+type AthenaWhereBooleanNotOperatorInput =
+  | { eq: AthenaConditionValue }
+  | { neq: AthenaConditionValue }
+  | { gt: AthenaConditionValue }
+  | { gte: AthenaConditionValue }
+  | { lt: AthenaConditionValue }
+  | { lte: AthenaConditionValue }
+  | { like: AthenaConditionValue }
+  | { ilike: AthenaConditionValue }
+  | { is: AthenaConditionValue }
+
+type AthenaWhereBooleanOperand<Row = Record<string, AthenaJsonValue | undefined>> =
+  string extends keyof Row & string
+    ? AthenaWhereColumnInput<Row>
+    : {
+        [K in keyof Row & string]: {
+          [P in K]: AthenaConditionValue | AthenaWhereBooleanSafeOperatorInput
+        } & Partial<Record<Exclude<keyof Row & string, K>, never>>
+      }[keyof Row & string]
+
+type AthenaWhereNotOperand<Row = Record<string, AthenaJsonValue | undefined>> =
+  string extends keyof Row & string
+    ? AthenaWhereColumnInput<Row>
+    : {
+        [K in keyof Row & string]: {
+          [P in K]: AthenaConditionValue | AthenaWhereBooleanNotOperatorInput
+        } & Partial<Record<Exclude<keyof Row & string, K>, never>>
+      }[keyof Row & string]
+
 type AthenaWhere<Row = Record<string, AthenaJsonValue | undefined>> =
-  Partial<Record<keyof Row & string, AthenaConditionValue | AthenaWhereOperatorInput>> & {
-    or?: Array<Partial<Record<keyof Row & string, AthenaConditionValue | AthenaWhereOperatorInput>>>
-    not?: Partial<Record<keyof Row & string, AthenaConditionValue | AthenaWhereOperatorInput>>
+  AthenaWhereColumnInput<Row> & {
+    or?: [AthenaWhereBooleanOperand<Row>, ...AthenaWhereBooleanOperand<Row>[]]
+    not?: AthenaWhereNotOperand<Row>
   }
 
 type AthenaOrderBy<Row = Record<string, AthenaJsonValue | undefined>> =
@@ -603,7 +646,9 @@ Notes:
 
 - `select` is required.
 - `where` scalar values compile to `eq`.
-- `where.or` and `where.not` only support shapes that map losslessly into the current gateway condition transport.
+- On typed rows, each `where.or` clause must target exactly one known column and only use scalar lossless operators (`eq`, `neq`, `gt`, `gte`, `lt`, `lte`, `like`, `ilike`, `is`).
+- On typed rows, `where.not` must target exactly one known column and use either an `eq` shorthand value or a single scalar lossless operator.
+- On untyped rows, runtime validation still enforces the same boolean-clause transport constraints.
 - `orderBy` supports one column in v1.
 - `as` and `via` are the escape hatches for aliased or ambiguous relation joins.
 
@@ -724,6 +769,13 @@ interface AthenaGatewayCallOptions {
   updateBody?: AthenaJsonObject
 }
 ```
+
+Behavior notes:
+
+- If `headers.Cookie` includes an Athena auth session cookie such as `athena-auth.session_token`, the gateway request also sends `X-Athena-Auth-Session-Token` with the parsed token.
+- If `headers.Authorization` is `Bearer <token>`, the gateway request also sends `X-Athena-Auth-Bearer-Token` with the bare token.
+- The original `Cookie` and `Authorization` headers are still forwarded unchanged.
+- `createClient(..., { auth: { bearerToken } })` also mirrors that bearer token onto gateway requests as `X-Athena-Auth-Bearer-Token`.
 
 ### `AthenaRpcCallOptions`
 

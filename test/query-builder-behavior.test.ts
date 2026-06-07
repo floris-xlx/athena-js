@@ -301,6 +301,26 @@ test('insert merges options from select call', async () => {
   }
 })
 
+test('mutation select-level headers merge with constructor headers', async () => {
+  const { calls, restore } = mockFetch()
+  const headerClient = createClient('https://athena-db.com', 'secret', {
+    headers: { 'X-Base': 'base' },
+  })
+  try {
+    await headerClient
+      .from('characters')
+      .insert({ name: 'Frodo' }, { headers: { 'X-Mutation': 'mutation' } })
+      .select('id', { headers: { 'X-Select': 'select' } })
+
+    const headers = calls[0].init?.headers as Record<string, string>
+    assert.equal(headers['X-Base'], 'base')
+    assert.equal(headers['X-Mutation'], 'mutation')
+    assert.equal(headers['X-Select'], 'select')
+  } finally {
+    restore()
+  }
+})
+
 test('upsert merges select options', async () => {
   const { calls, restore } = mockFetch()
   try {
@@ -1477,6 +1497,25 @@ test('rpc select-level options override constructor options', async () => {
   }
 })
 
+test('rpc select-level headers merge with constructor headers', async () => {
+  const { calls, restore } = mockFetch()
+  const headerClient = createClient('https://athena-db.com', 'secret', {
+    headers: { 'X-Base': 'base' },
+  })
+  try {
+    await headerClient
+      .rpc('list_characters', { scope: 'all' }, { headers: { 'X-Rpc': 'rpc' } })
+      .select('id', { headers: { 'X-Select': 'select' } })
+
+    const headers = calls[0].init?.headers as Record<string, string>
+    assert.equal(headers['X-Base'], 'base')
+    assert.equal(headers['X-Rpc'], 'rpc')
+    assert.equal(headers['X-Select'], 'select')
+  } finally {
+    restore()
+  }
+})
+
 test('rpc get mode calls compatibility endpoint with filters', async () => {
   const { calls, restore } = mockFetch()
   try {
@@ -1581,6 +1620,25 @@ test('query handles error propagation', async () => {
     assert.equal(result.error?.message, 'invalid syntax')
   } finally {
     globalThis.fetch = original
+  }
+})
+
+test('rpc get mode preserves repeated same-column filters', async () => {
+  const { calls, restore } = mockFetch()
+  try {
+    await client
+      .rpc('list_characters', {}, { get: true })
+      .gte('created_at', '2026-01-01T00:00:00Z')
+      .lt('created_at', '2026-02-01T00:00:00Z')
+      .select('id')
+
+    const url = new URL(calls[0].url)
+    assert.deepEqual(url.searchParams.getAll('created_at'), [
+      'gte.2026-01-01T00:00:00Z',
+      'lt.2026-02-01T00:00:00Z',
+    ])
+  } finally {
+    restore()
   }
 })
 

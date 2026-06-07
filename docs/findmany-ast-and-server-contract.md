@@ -198,11 +198,54 @@ type AthenaWhereOperatorInput = {
   containedBy?: Array<string | number | boolean | null>
 }
 
-type AthenaWhere<Row> = Partial<
+type AthenaWhereColumnInput<Row> = Partial<
   Record<keyof Row & string, string | number | boolean | null | AthenaWhereOperatorInput>
-> & {
-  or?: Array<Partial<Record<keyof Row & string, string | number | boolean | null | AthenaWhereOperatorInput>>>
-  not?: Partial<Record<keyof Row & string, string | number | boolean | null | AthenaWhereOperatorInput>>
+>
+
+type AthenaWhereBooleanSafeOperatorInput = {
+  eq?: string | number | boolean | null
+  neq?: string | number | boolean | null
+  gt?: string | number | boolean | null
+  gte?: string | number | boolean | null
+  lt?: string | number | boolean | null
+  lte?: string | number | boolean | null
+  like?: string | number | boolean | null
+  ilike?: string | number | boolean | null
+  is?: string | number | boolean | null
+}
+
+type AthenaWhereBooleanNotOperatorInput =
+  | { eq: string | number | boolean | null }
+  | { neq: string | number | boolean | null }
+  | { gt: string | number | boolean | null }
+  | { gte: string | number | boolean | null }
+  | { lt: string | number | boolean | null }
+  | { lte: string | number | boolean | null }
+  | { like: string | number | boolean | null }
+  | { ilike: string | number | boolean | null }
+  | { is: string | number | boolean | null }
+
+type AthenaWhereBooleanOperand<Row> =
+  string extends keyof Row & string
+    ? AthenaWhereColumnInput<Row>
+    : {
+        [K in keyof Row & string]: {
+          [P in K]: string | number | boolean | null | AthenaWhereBooleanSafeOperatorInput
+        } & Partial<Record<Exclude<keyof Row & string, K>, never>>
+      }[keyof Row & string]
+
+type AthenaWhereNotOperand<Row> =
+  string extends keyof Row & string
+    ? AthenaWhereColumnInput<Row>
+    : {
+        [K in keyof Row & string]: {
+          [P in K]: string | number | boolean | null | AthenaWhereBooleanNotOperatorInput
+        } & Partial<Record<Exclude<keyof Row & string, K>, never>>
+      }[keyof Row & string]
+
+type AthenaWhere<Row> = AthenaWhereColumnInput<Row> & {
+  or?: [AthenaWhereBooleanOperand<Row>, ...AthenaWhereBooleanOperand<Row>[]]
+  not?: AthenaWhereNotOperand<Row>
 }
 
 type AthenaOrderBy<Row> =
@@ -740,7 +783,9 @@ These are the practical implications of the new surface.
 
 - `findMany(...)` is eager, unlike `.select(...)`
 - `orderBy` only supports one column in v1
-- `where.not` only supports shapes that can compile losslessly into the current gateway condition transport
+- on typed rows, each `where.or` clause must target exactly one known column and only use scalar lossless operators
+- on typed rows, `where.not` must target exactly one known column and use either an eq shorthand value or a single scalar lossless operator
+- on untyped rows, runtime validation still enforces the same boolean-clause transport constraints
 - malformed AST input throws before network execution
 
 ## Error handling

@@ -2,9 +2,16 @@
 
 ## Unreleased
 
-### Notes
+### Breaking Changes
 
-- _No unreleased changes yet._
+- Removed the no-op `AthenaClient.builder().healthTracking(...)` builder method.
+
+### Fixes
+
+- Corrected `X-Athena-Sdk` version headers to use the package version in both gateway and auth clients.
+- Preserved repeated same-column RPC GET filters and deep-merged chained request headers across RPC and mutation select flows.
+- Tightened typed `findMany(...).where.or` and `where.not` boolean clause shapes to match the current runtime transport constraints.
+- Gateway/query requests now mirror available auth context into `X-Athena-Auth-Session-Token` and `X-Athena-Auth-Bearer-Token` while still forwarding the original cookie and authorization headers.
 
 ## [2.4.0](https://github.com/xylex-group/athena-js/compare/v2.3.0...v2.4.0) (2026-06-05)
 
@@ -125,4 +132,3 @@
 
 - Release channel: stable
 - Tag: `v0.2.1`
-

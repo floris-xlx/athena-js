@@ -2,7 +2,7 @@
 
 This file is generated from the TypeScript source and is intended to document every public SDK method surface with a usage example.
 
-Total documented method paths: **327**
+Total documented method paths: **344**
 
 Regenerate with: `node scripts/generate-sdk-method-reference.mjs`
 
@@ -33,6 +33,7 @@ Regenerate with: `node scripts/generate-sdk-method-reference.mjs`
 | `root.isOk` | `<T>(result: AthenaResult<T>) => boolean` | `isOk(/* ... */)` | Returns `true` when a result is successful (`2xx` status and no `error`). |
 | `root.loadGeneratorConfig` | `(options?: LoadGeneratorConfigOptions) => Promise<LoadedGeneratorConfig>` | `loadGeneratorConfig()` | Loads and normalizes `athena.config.*` from disk. |
 | `root.normalizeAthenaError` | `(resultOrError: unknown, context?: AthenaOperationContext) => NormalizedAthenaError` | `normalizeAthenaError(/* ... */)` | Normalizes any Athena failure shape into a stable, typed error envelope. Accepts `AthenaResult`, `AthenaGatewayError`, native `Error`, or unknown values. Optional `context` can override inferred table/operation metadata for clearer diagnostics. |
+| `root.normalizeAthenaGatewayBaseUrl` | `(input: string \| null \| undefined, options?: NormalizeAthenaGatewayBaseUrlOptions) => string` | `normalizeAthenaGatewayBaseUrl(/* ... */)` | — |
 | `root.normalizeGeneratorConfig` | `(input: AthenaGeneratorConfig) => NormalizedAthenaGeneratorConfig` | `normalizeGeneratorConfig(/* ... */)` | — |
 | `root.normalizeSchemaSelection` | `(input: GeneratorSchemaSelection \| undefined) => string[]` | `normalizeSchemaSelection(/* ... */)` | Normalizes schema selection from config or env-backed strings into a stable, deduplicated list. Empty selections fall back to PostgreSQL's public schema. |
 | `root.parseBooleanFlag` | `(rawValue: string \| undefined, fallback: boolean) => boolean` | `parseBooleanFlag(/* ... */)` | Parses a string-based boolean flag with a deterministic fallback. Accepts common truthy/falsey token variants used by env vars and CLI flags. |
@@ -48,6 +49,7 @@ Regenerate with: `node scripts/generate-sdk-method-reference.mjs`
 | `root.unwrap` | `{    <T>(result: AthenaResult<T \| null>, options: UnwrapOptions & {        allowNull: true;    }): T \| null;    <T>(result: AthenaResult<T \| null>, options?: UnwrapOptions): T;}` | `unwrap(/* ... */)` | Unwraps successful result data from `AthenaResult<T \| null>`. By default, `null` data throws. Pass `{ allowNull: true }` to permit nullable payloads. |
 | `root.unwrapOne` | `{    <T>(result: AthenaResult<T[] \| T \| null>, options: UnwrapOneOptions & {        allowNull: true;    }): T \| null;    <T>(result: AthenaResult<T[] \| T \| null>, options?: UnwrapOneOptions): T;}` | `unwrapOne(/* ... */)` | Unwraps the first row from a successful result that may contain arrays/scalars/null. - Throws on failed results. - Throws when no row exists unless `allowNull: true` is provided. - Optionally enforces exact cardinality via `requireExactlyOne`. |
 | `root.unwrapRows` | `<T>(result: AthenaResult<T[] \| T \| null>, options?: UnwrapOptions) => T[]` | `unwrapRows(/* ... */)` | Unwraps a successful result into a row array. - Throws on failed results. - Converts `null` data to an empty array. - Wraps scalar data in a single-element array. |
+| `root.verifyAthenaGatewayUrl` | `(baseUrl: string, options?: AthenaGatewayConnectionOptions) => Promise<AthenaGatewayConnectionResult>` | `verifyAthenaGatewayUrl(/* ... */)` | — |
 | `root.withRetry` | `<T>(config: RetryConfig, fn: () => Promise<T>) => Promise<T>` | `withRetry(/* ... */)` | Retries an async operation with configurable backoff and retry policy. `retries` represents additional attempts after the first failure. By default, transient and rate-limit errors are retried. |
 
 ## Runtime Client Fluent Builder and Query Methods
@@ -55,14 +57,14 @@ Regenerate with: `node scripts/generate-sdk-method-reference.mjs`
 | Method | Signature | Example | Notes |
 |---|---|---|---|
 | `athena.db.delete` | `<Row = AthenaRowShape>(table: string, options?: AthenaGatewayCallOptions & {    resourceId?: string;}) => MutationQuery<Row \| null>` | `await athena.db.delete("users", { resourceId: "u_1" }).select()` | — |
-| `athena.db.from` | `<Row = AthenaRowShape, Insert = Partial<Row>, Update = Partial<Insert>>(table: string, options?: { schema?: string }) => TableQueryBuilder<Row, Insert, Update>` | `athena.db.from("users", { schema: "auth" }).select()` | — |
+| `athena.db.from` | `<Row = AthenaRowShape, Insert = Partial<Row>, Update = Partial<Insert>>(table: string, options?: AthenaFromOptions) => TableQueryBuilder<Row, Insert, Update>` | `athena.db.from("users").select()` | — |
 | `athena.db.insert` | `{    <Row = AthenaRowShape, Insert = Partial<Row>>(table: string, values: Insert, options?: AthenaGatewayCallOptions): MutationQuery<Row>;    <Row = AthenaRowShape, Insert = Partial<Row>>(table: string, values: Insert[], options?: AthenaGatewayCallOptions): MutationQuery<Row[]>;}` | `await athena.db.insert("users", { name: "Ada" }).select()` | — |
 | `athena.db.query` | `<Row = unknown>(query: string, options?: AthenaGatewayCallOptions) => Promise<AthenaResult<Row[]>>` | `await athena.db.query("select * from users")` | — |
 | `athena.db.rpc` | `<Row = unknown, Args extends AthenaJsonObject = AthenaJsonObject>(fn: string, args?: Args, options?: AthenaRpcCallOptions) => RpcQueryBuilder<Row>` | `await athena.db.rpc("list_users").select()` | — |
 | `athena.db.select` | `<Row = AthenaRowShape, SelectedRow = Row>(table: string, columns?: string \| string[], options?: AthenaGatewayCallOptions) => SelectChain<Row, SelectedRow>` | `await athena.db.select("users", "id,name")` | — |
 | `athena.db.update` | `<Row = AthenaRowShape, Insert = Partial<Row>, Update = Partial<Insert>>(table: string, values: Update, options?: AthenaGatewayCallOptions) => UpdateChain<Row>` | `await athena.db.update("users", { name: "Ada" }).eq("id", "u_1").select()` | — |
 | `athena.db.upsert` | `{    <Row = AthenaRowShape, Insert = Partial<Row>, Update = Partial<Insert>>(table: string, values: Insert, options?: AthenaUpsertOptions<Update>): MutationQuery<Row>;    <Row = AthenaRowShape, Insert = Partial<Row>, Update = Partial<Insert>>(table: string, values: Insert[], options?: AthenaUpsertOptions<Update>): MutationQuery<Row[]>;}` | `await athena.db.upsert("users", { id: "u_1", name: "Ada" }).select()` | — |
-| `athena.from` | `<Row = AthenaRowShape, Insert = Partial<Row>, Update = Partial<Insert>>(table: string, options?: { schema?: string }) => TableQueryBuilder<Row, Insert, Update>` | `athena.from("users", { schema: "auth" })` | — |
+| `athena.from` | `<Row = AthenaRowShape, Insert = Partial<Row>, Update = Partial<Insert>>(table: string, options?: AthenaFromOptions) => TableQueryBuilder<Row, Insert, Update>` | `athena.from(/* ... */)` | — |
 | `athena.from.containedBy` | `(column: ResolvedFilterColumnKey<Row>, values: AthenaConditionArrayValue) => TableQueryBuilder<Row, Insert, Update, TContext>` | `athena.from("users").containedBy(/* ... */)` | — |
 | `athena.from.contains` | `(column: ResolvedFilterColumnKey<Row>, values: AthenaConditionArrayValue) => TableQueryBuilder<Row, Insert, Update, TContext>` | `athena.from("users").contains(/* ... */)` | — |
 | `athena.from.currentPage` | `(value: number) => TableQueryBuilder<Row, Insert, Update, TContext>` | `athena.from("users").select("id").currentPage(/* ... */)` | — |
@@ -70,7 +72,7 @@ Regenerate with: `node scripts/generate-sdk-method-reference.mjs`
 | `athena.from.eq` | `(column: ResolvedFilterColumnKey<Row>, value: AthenaConditionValue) => TableQueryBuilder<Row, Insert, Update, TContext>` | `athena.from("users").eq(/* ... */)` | — |
 | `athena.from.eqCast` | `(column: ResolvedFilterColumnKey<Row>, value: AthenaConditionValue, cast: AthenaConditionCastType) => TableQueryBuilder<Row, Insert, Update, TContext>` | `athena.from("users").eqCast(/* ... */)` | — |
 | `athena.from.eqUuid` | `(column: ResolvedFilterColumnKey<Row>, value: string) => TableQueryBuilder<Row, Insert, Update, TContext>` | `athena.from("users").eqUuid(/* ... */)` | — |
-| `athena.from.findMany` | `<const TSelect extends AthenaSelectShape>(options: AthenaFindManyOptions<Row, TSelect>) => Promise<AthenaResult<Array<AthenaFindManyResult<Row, TSelect, TContext>>>>` | `await athena.from("orchestral_sections").findMany({ select: { name: true, instruments: { select: { name: true } } } })` | — |
+| `athena.from.findMany` | `<const TSelect extends AthenaSelectShape>(options: AthenaFindManyOptions<Row, TSelect> & {    select: AthenaValidatedSelectShape<TSelect>;}) => Promise<AthenaResult<Array<AthenaFindManyResult<Row, TSelect, TContext>>>>` | `await athena.from("orchestral_sections").findMany({ select: { name: true, instruments: { select: { name: true } } } })` | — |
 | `athena.from.gt` | `(column: ResolvedFilterColumnKey<Row>, value: AthenaConditionValue) => TableQueryBuilder<Row, Insert, Update, TContext>` | `athena.from("users").gt(/* ... */)` | — |
 | `athena.from.gte` | `(column: ResolvedFilterColumnKey<Row>, value: AthenaConditionValue) => TableQueryBuilder<Row, Insert, Update, TContext>` | `athena.from("users").gte(/* ... */)` | — |
 | `athena.from.ilike` | `(column: ResolvedFilterColumnKey<Row>, value: AthenaConditionValue) => TableQueryBuilder<Row, Insert, Update, TContext>` | `athena.from("users").ilike(/* ... */)` | — |
@@ -172,13 +174,13 @@ Regenerate with: `node scripts/generate-sdk-method-reference.mjs`
 | `athena.rpc.range` | `(from: number, to: number) => RpcQueryBuilder<Row>` | `athena.rpc("list_users").range(/* ... */)` | — |
 | `athena.rpc.select` | `(columns?: string \| string[], options?: AthenaRpcCallOptions) => Promise<AthenaResult<Row[]>>` | `await athena.rpc("list_users").select()` | — |
 | `athena.rpc.single` | `<T = Row>(columns?: string \| string[], options?: AthenaRpcCallOptions) => Promise<AthenaResult<T \| null>>` | `await athena.rpc("list_users").single()` | — |
+| `athena.verifyConnection` | `(options?: AthenaGatewayConnectionOptions) => Promise<AthenaGatewayConnectionResult>` | `athena.verifyConnection()` | — |
 | `AthenaClient.builder.auth` | `(config: AthenaAuthClientConfig) => AthenaClientBuilder` | `AthenaClient.builder().auth(/* ... */)` | Configure Athena Auth client behavior for `client.auth.*` methods. |
 | `AthenaClient.builder.backend` | `(backend: BackendConfig \| BackendType) => AthenaClientBuilder` | `AthenaClient.builder().backend(/* ... */)` | Set the default backend routing strategy. |
 | `AthenaClient.builder.build` | `() => AthenaSdkClientWithAuth` | `const client = AthenaClient.builder().url("https://...").key("...").build()` | Build the immutable Athena SDK client. |
 | `AthenaClient.builder.client` | `(clientName: string) => AthenaClientBuilder` | `AthenaClient.builder().client(/* ... */)` | Set the default Athena client routing key. |
-| `AthenaClient.builder.experimental` | `(options: AthenaClientExperimentalOptions) => AthenaClientBuilder` | `AthenaClient.builder().experimental(/* ... */)` | Configure experimental client options (for example query tracing, retryable read retries, or `findMany(...)` AST transport). |
+| `AthenaClient.builder.experimental` | `(options: AthenaClientExperimentalOptions) => AthenaClientBuilder` | `AthenaClient.builder().experimental(/* ... */)` | Configure experimental client options (for example query tracing or findMany AST transport). |
 | `AthenaClient.builder.headers` | `(headers: Record<string, string>) => AthenaClientBuilder` | `AthenaClient.builder().headers(/* ... */)` | Attach static headers to every request. |
-| `AthenaClient.builder.healthTracking` | `(enabled: boolean) => AthenaClientBuilder` | `AthenaClient.builder().healthTracking(/* ... */)` | Enable or disable health tracking metadata. |
 | `AthenaClient.builder.key` | `(apiKey: string) => AthenaClientBuilder` | `AthenaClient.builder().key(/* ... */)` | Set the API key used for all requests. |
 | `AthenaClient.builder.options` | `(options: AthenaCreateClientOptions) => AthenaClientBuilder` | `AthenaClient.builder().options(/* ... */)` | Apply the same options object accepted by `createClient(url, key, options)`. |
 | `AthenaClient.builder.url` | `(url: string) => AthenaClientBuilder` | `AthenaClient.builder().url(/* ... */)` | Set the gateway base URL. |
@@ -356,24 +358,25 @@ Regenerate with: `node scripts/generate-sdk-method-reference.mjs`
 
 | Method | Signature | Example | Notes |
 |---|---|---|---|
+| `utils.asBoolean` | `(value: unknown) => boolean` | `utils.asBoolean(/* ... */)` | — |
+| `utils.asBooleanOrNull` | `(value: unknown) => boolean \| null` | `utils.asBooleanOrNull(/* ... */)` | — |
+| `utils.asIdentifier` | `(value: unknown) => string \| null` | `utils.asIdentifier(/* ... */)` | — |
+| `utils.asNumber` | `(value: unknown) => number \| null` | `utils.asNumber(/* ... */)` | — |
+| `utils.asRecord` | `(value: unknown) => Record<string, unknown> \| null` | `utils.asRecord(/* ... */)` | — |
+| `utils.asString` | `(value: unknown) => string \| null` | `utils.asString(/* ... */)` | — |
+| `utils.asStringArray` | `(value: unknown) => string[]` | `utils.asStringArray(/* ... */)` | — |
 | `utils.clearAuthCookies` | `(options?: ClearAuthCookiesOptions) => string[]` | `utils.clearAuthCookies()` | Clears Athena/Better Auth browser cookies by prefix. Returns the cookie names that matched and were targeted for deletion. |
-| `utils.asBoolean` | `(value: unknown) => boolean` | `utils.asBoolean(/* ... */)` | Coerces booleans, numbers, and common string tokens to a boolean; unrecognized values return `false`. |
-| `utils.asBooleanOrNull` | `(value: unknown) => boolean \| null` | `utils.asBooleanOrNull(/* ... */)` | Same coercion rules as `utils.asBoolean`, but returns `null` for unrecognized values. |
-| `utils.asIdentifier` | `(value: unknown) => string \| null` | `utils.asIdentifier(/* ... */)` | Coerces id-like values to strings. Use `identifier(...)` for SQL identifiers. |
-| `utils.asNumber` | `(value: unknown) => number \| null` | `utils.asNumber(/* ... */)` | Returns finite numbers from numeric values or numeric strings. |
-| `utils.asRecord` | `(value: unknown) => Record<string, unknown> \| null` | `utils.asRecord(/* ... */)` | Returns object-like records and rejects arrays, null, and primitives. |
-| `utils.asString` | `(value: unknown) => string \| null` | `utils.asString(/* ... */)` | Coerces finite numbers, bigint values, and non-empty trimmed strings to strings. |
-| `utils.asStringArray` | `(value: unknown) => string[]` | `utils.asStringArray(/* ... */)` | Trims array string entries and drops empty/non-string values. |
+| `utils.escapeLikePatternValue` | `(value: string) => string` | `utils.escapeLikePatternValue(/* ... */)` | Escapes `%`, `_`, and `\` for SQL `LIKE` / `ILIKE` patterns. |
+| `utils.firstString` | `(record: Record<string, unknown> \| null \| undefined, keys: readonly string[]) => string \| null` | `utils.firstString(/* ... */)` | — |
 | `utils.isLocalHostname` | `(hostname: string) => boolean` | `utils.isLocalHostname(/* ... */)` | — |
-| `utils.firstString` | `(record: Record<string, unknown> \| null \| undefined, keys: readonly string[]) => string \| null` | `utils.firstString(/* ... */)` | Returns the first present non-empty string-like value across the provided keys. |
 | `utils.parseBooleanFlag` | `(rawValue: string \| undefined, fallback: boolean) => boolean` | `utils.parseBooleanFlag(/* ... */)` | — |
 | `utils.proxyRequestHeaders` | `(request: Request) => Headers` | `utils.proxyRequestHeaders(/* ... */)` | — |
-| `utils.escapeLikePatternValue` | `(value: string) => string` | `utils.escapeLikePatternValue(/* ... */)` | Escapes `%`, `_`, and `\` for SQL `LIKE` / `ILIKE` pattern literals. |
-| `utils.quoteSqlStringLiteral` | `(value: string) => string` | `utils.quoteSqlStringLiteral(/* ... */)` | Returns a single-quoted SQL string literal with embedded apostrophes escaped. |
-| `utils.readTrimmedString` | `(value: unknown) => string \| null` | `utils.readTrimmedString(/* ... */)` | Returns a trimmed string or `null` for non-string or empty inputs. |
-| `utils.sqlBigInt` | `(value: bigint \| number) => string` | `utils.sqlBigInt(/* ... */)` | Renders an explicit `::bigint` SQL literal for raw query values. |
-| `utils.sqlJsonbLiteral` | `(value: unknown) => string` | `utils.sqlJsonbLiteral(/* ... */)` | JSON-serializes a value, dollar-quotes it, and appends `::jsonb`. |
-| `utils.sqlNullableText` | `(value: string \| null \| undefined) => string` | `utils.sqlNullableText(/* ... */)` | Returns `NULL` for nullish inputs, otherwise a dollar-quoted string literal. |
-| `utils.sqlText` | `(value: string) => string` | `utils.sqlText(/* ... */)` | Returns a PostgreSQL dollar-quoted literal for raw query values. Use `identifier(...)` for identifiers. |
+| `utils.quoteSqlStringLiteral` | `(value: string) => string` | `utils.quoteSqlStringLiteral(/* ... */)` | Wraps a string in a single-quoted SQL string literal. Prefer `sqlText(...)` for arbitrary raw SQL values when possible. |
+| `utils.readTrimmedString` | `(value: unknown) => string \| null` | `utils.readTrimmedString(/* ... */)` | — |
 | `utils.slugify` | `(input: string) => string` | `utils.slugify(/* ... */)` | — |
+| `utils.sqlBigInt` | `(value: bigint \| number) => string` | `utils.sqlBigInt(/* ... */)` | Renders an explicit `bigint` SQL literal. |
+| `utils.sqlJsonbLiteral` | `(value: unknown) => string` | `utils.sqlJsonbLiteral(/* ... */)` | Serializes a value and casts the result to `jsonb`. |
+| `utils.sqlNullableText` | `(value: string \| null \| undefined) => string` | `utils.sqlNullableText(/* ... */)` | Returns a dollar-quoted literal for strings, or the SQL keyword `NULL` for nullish values. |
+| `utils.sqlText` | `(value: string) => string` | `utils.sqlText(/* ... */)` | Wraps a string in a PostgreSQL dollar-quoted literal. Use this for SQL values, not identifiers. Pair with `identifier(...)` for table/column names. |
 | `utils.trimTrailingSlashes` | `(value: string) => string` | `utils.trimTrailingSlashes(/* ... */)` | — |
+

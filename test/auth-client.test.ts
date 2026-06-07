@@ -2,6 +2,7 @@ import { strict as assert } from 'assert'
 import { test } from 'node:test'
 import { Body, Html, Text } from '@react-email/components'
 import { createElement } from 'react'
+import packageJson from '../package.json' with { type: 'json' }
 import {
   createAuthClient,
   defineAuthEmailTemplate,
@@ -69,6 +70,22 @@ test('createClient exposes auth namespace and routes auth calls to configured au
     assert.equal(calls[0].url, 'https://auth.example.com/api/auth/get-session')
     assert.equal(calls[0].init?.method, 'GET')
     assert.equal(calls[0].init?.body, undefined)
+  } finally {
+    restore()
+  }
+})
+
+test('auth requests include the package sdk version header', async () => {
+  const { calls, restore } = mockFetch({
+    session: { id: 's_1' },
+    user: { id: 'u_1', email: 'u@example.com' },
+  })
+  try {
+    const client = createAuthClient({ baseUrl: 'https://auth.example.com/api/auth' })
+    await client.getSession()
+
+    const headers = calls[0].init?.headers as Record<string, string>
+    assert.equal(headers['X-Athena-Sdk'], `xylex-group/athena-auth ${packageJson.version}`)
   } finally {
     restore()
   }

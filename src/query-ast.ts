@@ -54,13 +54,51 @@ export type AthenaWhereOperatorInput = {
   containedBy?: AthenaConditionArrayValue
 }
 
-export type AthenaWhereBooleanOperand<Row = AthenaRowShape> = Partial<
+type AthenaWhereColumnInput<Row = AthenaRowShape> = Partial<
   Record<ResolvedFilterColumnKey<Row>, AthenaWherePrimitive | AthenaWhereOperatorInput>
 >
 
-export type AthenaWhere<Row = AthenaRowShape> = AthenaWhereBooleanOperand<Row> & {
-  or?: Array<AthenaWhereBooleanOperand<Row>>
-  not?: AthenaWhereBooleanOperand<Row>
+type AthenaBooleanSafeOperator = Exclude<AthenaFilterOperator, 'in' | 'contains' | 'containedBy'>
+
+type AthenaWhereBooleanSafeOperatorInput = Partial<
+  Record<AthenaBooleanSafeOperator, AthenaConditionValue>
+>
+
+type AthenaWhereBooleanNotOperatorInput = {
+  [K in AthenaBooleanSafeOperator]: {
+    [P in K]: AthenaConditionValue
+  } & Partial<Record<Exclude<AthenaBooleanSafeOperator, K>, never>>
+}[AthenaBooleanSafeOperator]
+
+type AthenaStrictBooleanOperand<Keys extends string, Value> = {
+  [K in Keys]: {
+    [P in K]: Value
+  } & Partial<Record<Exclude<Keys, K>, never>>
+}[Keys]
+
+type AthenaNonEmptyArray<T> = [T, ...T[]]
+
+export type AthenaWhereBooleanOperand<Row = AthenaRowShape> =
+  string extends ResolvedFilterColumnKey<Row>
+    ? AthenaWhereColumnInput<Row>
+    : AthenaStrictBooleanOperand<
+        ResolvedFilterColumnKey<Row>,
+        AthenaWherePrimitive | AthenaWhereBooleanSafeOperatorInput
+      >
+
+type AthenaWhereNotOperand<Row = AthenaRowShape> =
+  string extends ResolvedFilterColumnKey<Row>
+    ? AthenaWhereColumnInput<Row>
+    : AthenaStrictBooleanOperand<
+        ResolvedFilterColumnKey<Row>,
+        AthenaWherePrimitive | AthenaWhereBooleanNotOperatorInput
+      >
+
+export type AthenaWhere<Row = AthenaRowShape> = AthenaWhereColumnInput<Row> & {
+  or?: string extends ResolvedFilterColumnKey<Row>
+    ? Array<AthenaWhereColumnInput<Row>>
+    : AthenaNonEmptyArray<AthenaWhereBooleanOperand<Row>>
+  not?: AthenaWhereNotOperand<Row>
 }
 
 export interface AthenaRelationSelectNode<TSelect extends AthenaSelectShape = AthenaSelectShape> {
@@ -279,7 +317,7 @@ const FILTER_OPERATORS = new Set<AthenaFilterOperator>([
   'containedBy',
 ])
 
-const BOOLEAN_SAFE_OPERATORS = new Set<Exclude<AthenaFilterOperator, 'in' | 'contains' | 'containedBy'>>([
+const BOOLEAN_SAFE_OPERATORS = new Set<AthenaBooleanSafeOperator>([
   'eq',
   'neq',
   'gt',
@@ -499,7 +537,7 @@ function compileBooleanExpressionTerms(
   }
 
   return operatorEntries.map(([rawOperator, rawOperand]) => {
-    if (!BOOLEAN_SAFE_OPERATORS.has(rawOperator as Exclude<AthenaFilterOperator, 'in' | 'contains' | 'containedBy'>)) {
+    if (!BOOLEAN_SAFE_OPERATORS.has(rawOperator as AthenaBooleanSafeOperator)) {
       throw new Error(`findMany where.${label} only supports lossless scalar operators`)
     }
     if (Array.isArray(rawOperand)) {

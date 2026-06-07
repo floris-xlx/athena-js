@@ -1,5 +1,6 @@
 import { strict as assert } from 'assert'
 import { test } from 'node:test'
+import packageJson from '../package.json' with { type: 'json' }
 import { createAthenaGatewayClient, verifyAthenaGatewayUrl } from '../src/gateway/client.ts'
 import { AthenaGatewayError } from '../src/gateway/errors.ts'
 import { normalizeAthenaGatewayBaseUrl } from '../src/gateway/url.ts'
@@ -26,7 +27,7 @@ test('buildHeaders sets client and strip nulls by default', () => {
 test('buildHeaders includes standard sdk identification header', () => {
   const client = createAthenaGatewayClient({})
   const headers = client.buildHeaders()
-  assert.match(headers['X-Athena-Sdk'] ?? '', /^xylex-group\/athena\s+\d+\.\d+\.\d+$/)
+  assert.equal(headers['X-Athena-Sdk'], `xylex-group/athena ${packageJson.version}`)
 })
 
 test('buildHeaders sets api key', () => {
@@ -102,7 +103,7 @@ test('fetchGateway uses default client header when none provided', async () => {
     await client.fetchGateway({ table_name: 't' })
     const headers = calls[0].init?.headers as Record<string, string>
     assert.ok(headers['X-Athena-Client'], 'default client header should be set')
-    assert.match(headers['X-Athena-Sdk'] ?? '', /^xylex-group\/athena\s+\d+\.\d+\.\d+$/)
+    assert.equal(headers['X-Athena-Sdk'], `xylex-group/athena ${packageJson.version}`)
   } finally {
     restore()
   }
@@ -125,6 +126,30 @@ test('buildHeaders merges options headers', () => {
   const headers = client.buildHeaders({ headers: { 'X-Call': '2' } })
   assert.equal(headers['X-Config'], '1')
   assert.equal(headers['X-Call'], '2')
+})
+
+test('buildHeaders mirrors auth session token from cookie headers', () => {
+  const client = createAthenaGatewayClient({})
+  const headers = client.buildHeaders({
+    headers: {
+      cookie: 'existing=1; athena-auth.session_token=session-token-123',
+    },
+  })
+
+  assert.equal(headers.cookie, 'existing=1; athena-auth.session_token=session-token-123')
+  assert.equal(headers['X-Athena-Auth-Session-Token'], 'session-token-123')
+})
+
+test('buildHeaders mirrors bearer token from authorization headers', () => {
+  const client = createAthenaGatewayClient({})
+  const headers = client.buildHeaders({
+    headers: {
+      Authorization: 'Bearer bearer-token-123',
+    },
+  })
+
+  assert.equal(headers.Authorization, 'Bearer bearer-token-123')
+  assert.equal(headers['X-Athena-Auth-Bearer-Token'], 'bearer-token-123')
 })
 
 test('buildHeaders keeps stripNulls default when option undefined', () => {
@@ -336,6 +361,31 @@ test('rpcGateway supports GET mode with args, filters, and modifiers', async () 
     assert.equal(url.searchParams.get('head'), 'true')
     assert.equal(url.searchParams.get('limit'), '10')
     assert.equal(url.searchParams.get('offset'), '5')
+  } finally {
+    restore()
+  }
+})
+
+test('rpcGateway GET mode preserves repeated same-column filters in order', async () => {
+  const { calls, restore } = mockFetch()
+  try {
+    const client = createAthenaGatewayClient({ baseUrl: 'https://athena-db.com' })
+    await client.rpcGateway(
+      {
+        function: 'list_users',
+        filters: [
+          { column: 'created_at', operator: 'gte', value: '2026-01-01T00:00:00Z' },
+          { column: 'created_at', operator: 'lt', value: '2026-02-01T00:00:00Z' },
+        ],
+      },
+      { get: true },
+    )
+
+    const url = new URL(calls[0].url)
+    assert.deepEqual(url.searchParams.getAll('created_at'), [
+      'gte.2026-01-01T00:00:00Z',
+      'lt.2026-02-01T00:00:00Z',
+    ])
   } finally {
     restore()
   }
