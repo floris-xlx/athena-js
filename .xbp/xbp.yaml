@@ -1,35 +1,38 @@
-project_name: athena-js
-version: 0.1.0
-port: 3000
-build_dir: ./
 app_type: nodejs
+branch: main
 build_command: docker build -t xbp-athena-js:latest .
-start_command: docker run -d --rm --name xbp-athena-js -p 80:80 -e PORT xbp-athena-js:latest
-install_command: null
+build_dir: ./
+crate_name: null
+database: null
 environment:
-  NPM_CONFIG_TOKEN: ${NPM_CONFIG_TOKEN}
-  ATHENA_URL: ${ATHENA_URL}
   ATHENA_API_KEY: ${ATHENA_API_KEY}
-  ATHENA_CLIENT_E2E: ${ATHENA_CLIENT_E2E}
-  ATHENA_URL_E2E: ${ATHENA_URL_E2E}
   ATHENA_CLIENT: ${ATHENA_CLIENT}
-services: null
-systemd_service_name: null
-systemd: null
+  ATHENA_CLIENT_E2E: ${ATHENA_CLIENT_E2E}
+  ATHENA_URL: ${ATHENA_URL}
+  ATHENA_URL_E2E: ${ATHENA_URL_E2E}
+  NPM_CONFIG_TOKEN: ${NPM_CONFIG_TOKEN}
+install_command: null
 kafka_brokers: null
-kafka_topic: null
 kafka_public_url: null
+kafka_topic: null
+linear:
+  release:
+    initiative_ids:
+    - fd28f67f-8dc8-44b2-bf14-3821ce389145
 log_files: null
-monitor_url: null
-monitor_method: null
 monitor_expected_code: null
 monitor_interval: null
-database: null
-target: nodejs
-branch: main
-crate_name: null
+monitor_method: null
+monitor_url: null
 npm_script: null
+port: 3000
 port_storybook: null
+project_name: athena-js
+services: null
+start_command: docker run -d --rm --name xbp-athena-js -p 80:80 -e PORT xbp-athena-js:latest
+systemd: null
+systemd_service_name: null
+target: nodejs
 url: null
 url_storybook: null
-linear: null
+version: 0.1.0
