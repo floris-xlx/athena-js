@@ -62,28 +62,129 @@ All nested sections are validated by normal TypeScript shape and then normalized
 ### `defineGeneratorConfig` helper
 
 Use this helper to keep autocompletion and exactness in config files.
+For env-backed values, pair it with `generatorEnv(...)` so config files stay typed
+without manual `process.env`, non-null assertions, string splits, or boolean parsing.
 
 ```ts
-import { defineGeneratorConfig } from "@xylex-group/athena";
+import { defineGeneratorConfig, generatorEnv } from "@xylex-group/athena";
 
 export default defineGeneratorConfig({
   provider: {
     kind: "postgres",
     mode: "direct",
-    connectionString: process.env.DATABASE_URL!,
-    database: "app_db",
-    schemas: (process.env.ATHENA_GENERATOR_SCHEMAS ?? "public,athena").split(","),
+    connectionString: generatorEnv("DATABASE_URL"),
+    database: generatorEnv("ATHENA_GENERATOR_DB", { default: "app_db" }),
+    schemas: generatorEnv.list("ATHENA_GENERATOR_SCHEMAS", {
+      default: ["public", "athena"],
+    }),
   },
   output: {
     targets: {
-      model: "athena/models/{schema_kebab}/{model_kebab}.ts",
+      model: generatorEnv("ATHENA_GENERATOR_MODEL_TARGET", {
+        default: "athena/models/{schema_kebab}/{model_kebab}.ts",
+      }),
+      schema: generatorEnv("ATHENA_GENERATOR_SCHEMA_TARGET", {
+        default: "athena/schemas/{schema_kebab}.ts",
+      }),
+      database: generatorEnv("ATHENA_GENERATOR_DATABASE_TARGET", {
+        default: "athena/relations.ts",
+      }),
+      registry: generatorEnv("ATHENA_GENERATOR_REGISTRY_TARGET", {
+        default: "athena/config.ts",
+      }),
+    },
+    placeholderMap: generatorEnv.json("ATHENA_GENERATOR_PLACEHOLDER_MAP", {
+      default: {},
+    }),
+  },
+  naming: {
+    modelType: generatorEnv.oneOf(
+      "ATHENA_GENERATOR_MODEL_TYPE",
+      ["preserve", "camel", "pascal", "snake", "kebab"] as const,
+      { default: "pascal" },
+    ),
+  },
+  features: {
+    emitRelations: generatorEnv.boolean("ATHENA_GENERATOR_EMIT_RELATIONS", {
+      default: true,
+    }),
+  },
+});
+```
+
+### Env file loading
+
+`loadGeneratorConfig()` loads project env files before evaluating `athena.config.*`.
+
+Load order:
+
+- `.env`
+- `.env.local`
+- `.env.<NODE_ENV>`
+- `.env.<NODE_ENV>.local`
+
+Existing shell env vars win. Project env files only fill missing keys.
+
+That means both of these work:
+
+- `connectionString: process.env.DATABASE_URL!`
+- `connectionString: generatorEnv("DATABASE_URL")`
+
+`generatorEnv(...)` is preferred for generator config because it preserves the
+expected field type instead of widening everything to `string | undefined`.
+
+### `generatorEnv(...)` helpers
+
+Use the helper that matches the field type you are filling:
+
+- `generatorEnv("KEY")` for required strings such as `connectionString`
+- `generatorEnv("KEY", { default: "value" })` for string defaults
+- `generatorEnv.list("KEY", { default: ["public", "athena"] })` for comma-separated string arrays
+- `generatorEnv.boolean("KEY", { default: true })` for feature and experimental flags
+- `generatorEnv.oneOf("KEY", ["camel", "pascal"] as const, { default: "pascal" })` for string unions such as naming styles
+- `generatorEnv.json("KEY", { default: {} })` for object fields such as `output.placeholderMap`
+
+Examples:
+
+```ts
+import { defineGeneratorConfig, generatorEnv } from "@xylex-group/athena";
+
+export default defineGeneratorConfig({
+  provider: {
+    kind: "postgres",
+    mode: "gateway",
+    gatewayUrl: generatorEnv("ATHENA_URL"),
+    apiKey: generatorEnv("ATHENA_API_KEY"),
+    database: generatorEnv("ATHENA_GENERATOR_DB", { default: "app_db" }),
+    schemas: generatorEnv.list("ATHENA_GENERATOR_SCHEMAS", {
+      default: ["public", "athena"],
+    }),
+    backend: generatorEnv.oneOf("ATHENA_GENERATOR_BACKEND", ["athena", "postgresql"] as const, {
+      default: "athena",
+    }),
+  },
+  output: {
+    targets: {
+      model: generatorEnv("ATHENA_GENERATOR_MODEL_TARGET", {
+        default: "athena/models/{schema_kebab}/{model_kebab}.ts",
+      }),
       schema: "athena/schemas/{schema_kebab}.ts",
       database: "athena/relations.ts",
       registry: "athena/config.ts",
     },
+    placeholderMap: generatorEnv.json("ATHENA_GENERATOR_PLACEHOLDER_MAP", {
+      default: { namespace: "{database_kebab}/{schema_kebab}" },
+    }),
+  },
+  features: {
+    emitRegistry: generatorEnv.boolean("ATHENA_GENERATOR_EMIT_REGISTRY", {
+      default: true,
+    }),
   },
 });
 ```
+
+If you want a field to remain optional, pass `{ optional: true }`.
 
 ## Provider modes
 
@@ -106,6 +207,15 @@ Behavior:
 - uses Node Postgres (`pg`) catalog queries
 - includes primary keys, nullability, enums, and relations via direct SQL
 - useful for local dev and CI jobs with direct DB access
+
+Built-in fallback env keys for direct mode:
+
+- `provider.connectionString`: `ATHENA_GENERATOR_PG_URL`, `DATABASE_URL`, `PG_URL`, `POSTGRES_URL`, `POSTGRESQL_URL`
+- `provider.database`: `ATHENA_GENERATOR_DB`, `ATHENA_DATABASE`, `PGDATABASE`
+- password backfill for passwordless URLs: `ATHENA_GENERATOR_PG_PASSWORD`, `PGPASSWORD`
+
+Example: if `connectionString` is `postgresql://postgres@127.0.0.1:5432/app_db`
+and `PGPASSWORD` is set, the loader injects that password into the final URL.
 
 ### Postgres gateway mode
 
@@ -130,6 +240,12 @@ Behavior:
   - primary keys
   - foreign keys
 - this mode is available without the experimental flag and can be used in restricted networks where DB socket access is blocked
+
+Built-in fallback env keys for gateway mode:
+
+- `provider.gatewayUrl`: `ATHENA_URL`, `ATHENA_GATEWAY_URL`, `ATHENA_GENERATOR_URL`
+- `provider.apiKey`: `ATHENA_API_KEY`, `ATHENA_GATEWAY_API_KEY`, `ATHENA_GENERATOR_API_KEY`
+- `provider.database`: `ATHENA_GENERATOR_DB`, `ATHENA_DATABASE`, `PGDATABASE`
 
 ### Scylla mode (contract placeholder)
 
@@ -182,6 +298,10 @@ PostgreSQL providers accept `schemas` as either an array or a comma-separated st
 schemas: ["public", "athena"]
 // or
 schemas: process.env.ATHENA_GENERATOR_SCHEMAS ?? "public,athena"
+// or
+schemas: generatorEnv.list("ATHENA_GENERATOR_SCHEMAS", {
+  default: ["public", "athena"],
+})
 ```
 
 The generator trims whitespace, removes duplicates, and falls back to `["public"]`
@@ -300,15 +420,17 @@ The generator deduplicates output paths and throws if two artifacts collide.
 ### Local development (direct DB)
 
 ```ts
-import { defineGeneratorConfig } from "@xylex-group/athena";
+import { defineGeneratorConfig, generatorEnv } from "@xylex-group/athena";
 
 export default defineGeneratorConfig({
   provider: {
     kind: "postgres",
     mode: "direct",
-    connectionString: process.env.DATABASE_URL!,
-    database: "app_db",
-    schemas: ["public", "athena"],
+    connectionString: generatorEnv("DATABASE_URL"),
+    database: generatorEnv("ATHENA_GENERATOR_DB", { default: "app_db" }),
+    schemas: generatorEnv.list("ATHENA_GENERATOR_SCHEMAS", {
+      default: ["public", "athena"],
+    }),
   },
   output: {
     targets: {
@@ -317,14 +439,28 @@ export default defineGeneratorConfig({
       database: "athena/relations.ts",
       registry: "src/generated/registry.ts",
     },
-    placeholderMap: {
-      namespace: "{database_kebab}/{schema_kebab}",
-    },
+    placeholderMap: generatorEnv.json("ATHENA_GENERATOR_PLACEHOLDER_MAP", {
+      default: {
+        namespace: "{database_kebab}/{schema_kebab}",
+      },
+    }),
   },
   naming: {
-    modelType: "pascal",
-    modelConst: "camel",
-    schemaConst: "snake",
+    modelType: generatorEnv.oneOf(
+      "ATHENA_GENERATOR_MODEL_TYPE",
+      ["preserve", "camel", "pascal", "snake", "kebab"] as const,
+      { default: "pascal" },
+    ),
+    modelConst: generatorEnv.oneOf(
+      "ATHENA_GENERATOR_MODEL_CONST",
+      ["preserve", "camel", "pascal", "snake", "kebab"] as const,
+      { default: "camel" },
+    ),
+    schemaConst: generatorEnv.oneOf(
+      "ATHENA_GENERATOR_SCHEMA_CONST",
+      ["preserve", "camel", "pascal", "snake", "kebab"] as const,
+      { default: "snake" },
+    ),
   },
 });
 ```
@@ -332,14 +468,18 @@ export default defineGeneratorConfig({
 ### Gateway-only environment
 
 ```ts
-export default {
+import { defineGeneratorConfig, generatorEnv } from "@xylex-group/athena";
+
+export default defineGeneratorConfig({
   provider: {
     kind: "postgres",
     mode: "gateway",
-    gatewayUrl: process.env.ATHENA_URL!,
-    apiKey: process.env.ATHENA_API_KEY!,
-    database: "app_db",
-    schemas: ["public", "athena"],
+    gatewayUrl: generatorEnv("ATHENA_URL"),
+    apiKey: generatorEnv("ATHENA_API_KEY"),
+    database: generatorEnv("ATHENA_GENERATOR_DB", { default: "app_db" }),
+    schemas: generatorEnv.list("ATHENA_GENERATOR_SCHEMAS", {
+      default: ["public", "athena"],
+    }),
     backend: "athena",
   },
   output: {
@@ -351,7 +491,7 @@ export default {
     },
     placeholderMap: {},
   },
-};
+});
 ```
 
 ## Troubleshooting

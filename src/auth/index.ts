@@ -1,5 +1,12 @@
 export { createAuthClient } from './client.ts'
 export {
+  ATHENA_AUTH_BASE_ERROR_CODES,
+  athenaAuth,
+  defineAthenaAuthConfig,
+  drizzleAdapter,
+  tanstackStartCookies,
+} from './server.ts'
+export {
   renderAthenaReactEmail,
   createAuthReactEmailInput,
   defineAuthEmailTemplate,
@@ -73,3 +80,23 @@ export type {
   AthenaAdminListUsersFilterOperator,
   AthenaAdminListUsersQuery,
 } from './types.ts'
+export type {
+  AthenaAuthBaseURLConfig,
+  AthenaAuthCookieRuntimeInput,
+  AthenaAuthContext,
+  AthenaAuthDatabaseAdapter,
+  AthenaAuthDatabaseFactory,
+  AthenaAuthHandlerResult,
+  AthenaAuthPlugin,
+  AthenaAuthPluginContext,
+  AthenaAuthPluginHandlerContext,
+  AthenaAuthRequestContext,
+  AthenaAuthServer,
+  AthenaAuthServerApi,
+  AthenaAuthServerConfig,
+  AthenaAuthServerRuntimeOptions,
+  AthenaAuthSocialProviderConfig,
+  AthenaAuthTrustedOrigins,
+  AthenaAuthTrustedProviders,
+  AthenaDrizzleAdapterOptions,
+} from './server.ts'

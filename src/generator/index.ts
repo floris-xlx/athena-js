@@ -4,6 +4,7 @@ export {
   loadGeneratorConfig,
   normalizeGeneratorConfig,
 } from './config.ts'
+export { generatorEnv } from './env.ts'
 export { generateArtifactsFromSnapshot } from './renderer.ts'
 export { resolvePostgresColumnType } from './postgres-type-mapping.ts'
 export { resolveGeneratorProvider } from './providers.ts'
@@ -32,3 +33,10 @@ export type {
   RunGeneratorOptions,
   RunGeneratorResult,
 } from './types.ts'
+export type {
+  GeneratorEnvBooleanOptions,
+  GeneratorEnvJsonOptions,
+  GeneratorEnvListOptions,
+  GeneratorEnvOneOfOptions,
+  GeneratorEnvStringOptions,
+} from './env.ts'

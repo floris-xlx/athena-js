@@ -1014,6 +1014,7 @@ Runtime exports:
 
 - `defineGeneratorConfig`
 - `findGeneratorConfigPath`
+- `generatorEnv`
 - `loadGeneratorConfig`
 - `normalizeGeneratorConfig`
 - `resolveGeneratorProvider`
@@ -1131,6 +1132,16 @@ Generator config discovery checks in order:
 
 If you need concrete examples and troubleshooting scenarios, use the full
 [`generator-config.md`](generator-config.md) page.
+
+### Env-backed config note
+
+Generator config files can stay fully env-driven without losing type safety:
+
+- `generatorEnv("DATABASE_URL")` for required strings such as `provider.connectionString`
+- `generatorEnv.list("ATHENA_GENERATOR_SCHEMAS", { default: ["public", "athena"] })` for schema lists
+- `generatorEnv.boolean("ATHENA_GENERATOR_EMIT_REGISTRY", { default: true })` for flags
+- `generatorEnv.oneOf("ATHENA_GENERATOR_MODEL_TYPE", ["camel", "pascal"] as const, { default: "pascal" })` for string unions
+- `generatorEnv.json("ATHENA_GENERATOR_PLACEHOLDER_MAP", { default: {} })` for object-valued fields
 
 ```bash
 athena-js generate --dry-run

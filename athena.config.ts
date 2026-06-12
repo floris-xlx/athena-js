@@ -1,12 +1,14 @@
-import { defineGeneratorConfig } from './src/generator/index.ts'
+import { defineGeneratorConfig, generatorEnv } from './src/generator/index.ts'
 
 export default defineGeneratorConfig({
   provider: {
     kind: 'postgres',
     mode: 'direct',
-    connectionString: process.env.ATHENA_GENERATOR_PG_URL ?? 'postgres://postgres:postgres@127.0.0.1:5432/app_db',
-    database: process.env.ATHENA_GENERATOR_DB ?? 'app_db',
-    schemas: (process.env.ATHENA_GENERATOR_SCHEMAS ?? 'public,athena').split(','),
+    connectionString: generatorEnv('ATHENA_GENERATOR_PG_URL', {
+      default: 'postgres://postgres:postgres@127.0.0.1:5432/app_db',
+    }),
+    database: generatorEnv('ATHENA_GENERATOR_DB', { default: 'app_db' }),
+    schemas: generatorEnv.list('ATHENA_GENERATOR_SCHEMAS', { default: ['public', 'athena'] }),
   },
   output: {
     targets: {
@@ -20,18 +22,44 @@ export default defineGeneratorConfig({
     },
   },
   naming: {
-    modelType: 'pascal',
-    modelConst: 'camel',
-    schemaConst: 'camel',
-    databaseConst: 'camel',
-    registryConst: 'camel',
+    modelType: generatorEnv.oneOf(
+      'ATHENA_GENERATOR_MODEL_TYPE',
+      ['preserve', 'camel', 'pascal', 'snake', 'kebab'] as const,
+      { default: 'pascal' },
+    ),
+    modelConst: generatorEnv.oneOf(
+      'ATHENA_GENERATOR_MODEL_CONST',
+      ['preserve', 'camel', 'pascal', 'snake', 'kebab'] as const,
+      { default: 'camel' },
+    ),
+    schemaConst: generatorEnv.oneOf(
+      'ATHENA_GENERATOR_SCHEMA_CONST',
+      ['preserve', 'camel', 'pascal', 'snake', 'kebab'] as const,
+      { default: 'camel' },
+    ),
+    databaseConst: generatorEnv.oneOf(
+      'ATHENA_GENERATOR_DATABASE_CONST',
+      ['preserve', 'camel', 'pascal', 'snake', 'kebab'] as const,
+      { default: 'camel' },
+    ),
+    registryConst: generatorEnv.oneOf(
+      'ATHENA_GENERATOR_REGISTRY_CONST',
+      ['preserve', 'camel', 'pascal', 'snake', 'kebab'] as const,
+      { default: 'camel' },
+    ),
   },
   features: {
-    emitRelations: true,
-    emitRegistry: true,
+    emitRelations: generatorEnv.boolean('ATHENA_GENERATOR_EMIT_RELATIONS', { default: true }),
+    emitRegistry: generatorEnv.boolean('ATHENA_GENERATOR_EMIT_REGISTRY', { default: true }),
   },
   experimental: {
-    postgresGatewayIntrospection: false,
-    scyllaProviderContracts: true,
+    postgresGatewayIntrospection: generatorEnv.boolean(
+      'ATHENA_GENERATOR_POSTGRES_GATEWAY_INTROSPECTION',
+      { default: false },
+    ),
+    scyllaProviderContracts: generatorEnv.boolean(
+      'ATHENA_GENERATOR_SCYLLA_PROVIDER_CONTRACTS',
+      { default: true },
+    ),
   },
 })

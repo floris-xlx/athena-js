@@ -578,15 +578,17 @@ athena-js generate --help
 Minimal direct mode config:
 
 ```ts
-import { defineGeneratorConfig } from "@xylex-group/athena";
+import { defineGeneratorConfig, generatorEnv } from "@xylex-group/athena";
 
 export default defineGeneratorConfig({
   provider: {
     kind: "postgres",
     mode: "direct",
-    connectionString: process.env.DATABASE_URL!,
-    database: "app_db",
-    schemas: ["public", "athena"],
+    connectionString: generatorEnv("DATABASE_URL"),
+    database: generatorEnv("ATHENA_GENERATOR_DB", { default: "app_db" }),
+    schemas: generatorEnv.list("ATHENA_GENERATOR_SCHEMAS", {
+      default: ["public", "athena"],
+    }),
   },
   output: {
     targets: {
@@ -600,17 +602,33 @@ export default defineGeneratorConfig({
 ```
 
 Use `mode: "gateway"` when CI or runners cannot open direct PostgreSQL connections.
+For full env-backed config patterns, fallback env keys, and connection string notes,
+see [`generator-config.md`](generator-config.md).
 
 ## 13) Production checklist
 ```ts
-provider: {
-  kind: "postgres",
-  mode: "gateway",
-  gatewayUrl: process.env.ATHENA_URL!,
-  apiKey: process.env.ATHENA_API_KEY!,
-  database: "app_db",
-  schemas: ["public", "athena"],
-}
+import { defineGeneratorConfig, generatorEnv } from "@xylex-group/athena";
+
+export default defineGeneratorConfig({
+  provider: {
+    kind: "postgres",
+    mode: "gateway",
+    gatewayUrl: generatorEnv("ATHENA_URL"),
+    apiKey: generatorEnv("ATHENA_API_KEY"),
+    database: generatorEnv("ATHENA_GENERATOR_DB", { default: "app_db" }),
+    schemas: generatorEnv.list("ATHENA_GENERATOR_SCHEMAS", {
+      default: ["public", "athena"],
+    }),
+  },
+  output: {
+    targets: {
+      model: "athena/models/{schema_kebab}/{model_kebab}.ts",
+      schema: "athena/schemas/{schema_kebab}.ts",
+      database: "athena/relations.ts",
+      registry: "athena/config.ts",
+    },
+  },
+})
 ```
 
 - Use typed `fromModel(...)` on domains with frequent schema changes.

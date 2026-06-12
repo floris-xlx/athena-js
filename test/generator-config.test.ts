@@ -185,6 +185,108 @@ test('defineGeneratorConfig is an identity helper for typed configs', () => {
   assert.equal(config.output.targets.model.includes('{model_kebab}'), true)
 })
 
+test('generatorEnv resolves typed env-backed config fields across generator sections', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'athena-generator-config-env-helper-'))
+  const previousValues = new Map<string, string | undefined>([
+    ['DATABASE_URL', process.env.DATABASE_URL],
+    ['ATHENA_GENERATOR_DB', process.env.ATHENA_GENERATOR_DB],
+  ])
+
+  delete process.env.DATABASE_URL
+  delete process.env.ATHENA_GENERATOR_DB
+
+  try {
+    writeFileSync(
+      join(root, '.env.local'),
+      [
+        'DATABASE_URL=postgres://postgres:from_helper@127.0.0.1:5432/app_db',
+        'ATHENA_GENERATOR_DB=env_app_db',
+        'ATHENA_GENERATOR_SCHEMAS=public,athena,public',
+        'ATHENA_GENERATOR_MODEL_TARGET=generated/models/{schema_kebab}/{model_kebab}.ts',
+        'ATHENA_GENERATOR_PLACEHOLDER_MAP={"namespace":"env/generated"}',
+        'ATHENA_GENERATOR_MODEL_STYLE=snake',
+        'ATHENA_GENERATOR_EMIT_RELATIONS=off',
+        'ATHENA_GENERATOR_GATEWAY_EXPERIMENTAL=yes',
+      ].join('\n'),
+      'utf8',
+    )
+    writeFileSync(
+      join(root, 'athena.config.ts'),
+      `
+      import { defineGeneratorConfig, generatorEnv } from '${new URL('../src/generator/index.ts', import.meta.url).href}'
+
+      export default defineGeneratorConfig({
+        provider: {
+          kind: 'postgres',
+          mode: 'direct',
+          connectionString: generatorEnv('DATABASE_URL'),
+          database: generatorEnv('ATHENA_GENERATOR_DB', { default: 'app_db' }),
+          schemas: generatorEnv.list('ATHENA_GENERATOR_SCHEMAS', { default: ['public'] }),
+        },
+        output: {
+          targets: {
+            model: generatorEnv('ATHENA_GENERATOR_MODEL_TARGET', {
+              default: 'athena/models/{schema_kebab}/{model_kebab}.ts',
+            }),
+            schema: 'athena/schemas/{schema_kebab}.ts',
+            database: 'athena/relations.ts',
+            registry: 'athena/config.ts',
+          },
+          placeholderMap: generatorEnv.json('ATHENA_GENERATOR_PLACEHOLDER_MAP', {
+            default: { namespace: 'athena' },
+          }),
+        },
+        naming: {
+          modelType: generatorEnv.oneOf(
+            'ATHENA_GENERATOR_MODEL_STYLE',
+            ['preserve', 'camel', 'pascal', 'snake', 'kebab'] as const,
+            { default: 'pascal' },
+          ),
+        },
+        features: {
+          emitRelations: generatorEnv.boolean('ATHENA_GENERATOR_EMIT_RELATIONS', { default: true }),
+        },
+        experimental: {
+          postgresGatewayIntrospection: generatorEnv.boolean('ATHENA_GENERATOR_GATEWAY_EXPERIMENTAL', {
+            default: false,
+          }),
+        },
+      })
+      `,
+      'utf8',
+    )
+
+    const loaded = await loadGeneratorConfig({ cwd: root })
+    if (loaded.config.provider.kind !== 'postgres' || loaded.config.provider.mode !== 'direct') {
+      throw new Error('Expected direct postgres provider.')
+    }
+
+    assert.equal(
+      loaded.config.provider.connectionString,
+      'postgres://postgres:from_helper@127.0.0.1:5432/app_db',
+    )
+    assert.equal(loaded.config.provider.database, 'env_app_db')
+    assert.deepEqual(loaded.config.provider.schemas, ['public', 'athena'])
+    assert.equal(
+      loaded.config.output.targets.model,
+      'generated/models/{schema_kebab}/{model_kebab}.ts',
+    )
+    assert.deepEqual(loaded.config.output.placeholderMap, { namespace: 'env/generated' })
+    assert.equal(loaded.config.naming.modelType, 'snake')
+    assert.equal(loaded.config.features.emitRelations, false)
+    assert.equal(loaded.config.experimental.postgresGatewayIntrospection, true)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+    for (const [key, value] of previousValues.entries()) {
+      if (value === undefined) {
+        delete process.env[key]
+      } else {
+        process.env[key] = value
+      }
+    }
+  }
+})
+
 test('loadGeneratorConfig resolves CJS transpiler-style nested default exports', async () => {
   const root = mkdtempSync(join(tmpdir(), 'athena-generator-config-cjs-'))
   try {

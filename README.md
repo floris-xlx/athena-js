@@ -188,6 +188,63 @@ pnpm add @react-email/components @react-email/render
 
 Auth responses follow the same envelope style: `{ ok, status, data, error, errorDetails, raw }`.
 
+#### Native auth bootstrap helpers
+
+If you want to remove `better-auth` from an app that is already aligned to
+Athena Auth session semantics, the SDK now ships a native bootstrap layer with
+an Athena-native `athenaAuth({...})` export that matches the Better Auth
+top-level contract:
+
+```ts
+import { athenaAuth, drizzleAdapter, tanstackStartCookies } from "@xylex-group/athena";
+import { drizzle } from "drizzle-orm/d1";
+import * as schema from "../db/schema";
+
+export function getAuth(env: {
+  DB: D1Database;
+  ATHENA_AUTH_URL: string;
+  ATHENA_AUTH_SECRET: string;
+  GITHUB_CLIENT_ID: string;
+  GITHUB_CLIENT_SECRET: string;
+}) {
+  const db = drizzle(env.DB, { schema });
+
+  return athenaAuth({
+    baseURL: env.ATHENA_AUTH_URL,
+    secret: env.ATHENA_AUTH_SECRET,
+    database: drizzleAdapter(db, { provider: "sqlite" }),
+    socialProviders: {
+      github: {
+        clientId: env.GITHUB_CLIENT_ID,
+        clientSecret: env.GITHUB_CLIENT_SECRET,
+        scope: ["repo", "read:org", "user:email"],
+      },
+    },
+    plugins: [tanstackStartCookies()],
+  });
+}
+```
+
+The returned auth object now carries the Better Auth-style top-level contract:
+
+- `handler(request)`
+- `api`
+- `options`
+- `$context`
+- `$ERROR_CODES`
+
+This native layer currently covers:
+
+- typed auth bootstrap config
+- native drizzle adapter descriptors
+- native TanStack Start cookie hooks
+- session cookie set/clear helpers via the SDK cookie primitives
+
+It also supports dynamic `baseURL` host resolution plus static/dynamic
+`trustedOrigins` and `trustedProviders` on the native server bootstrap.
+
+For the full details and current scope, see [`docs/auth/server-bootstrap.mdx`](docs/auth/server-bootstrap.mdx).
+
 ### Typed schema registry (model-first)
 
 You can keep `createClient(...).from<T>(...)` as-is, or opt into a typed registry:
@@ -251,6 +308,7 @@ Generator supports:
 - Multiple schema syncs such as `public` plus `athena`, with schema-safe default output paths
 - Placeholder-driven output paths
 - Feature flags (`features.emitRegistry`, `features.emitRelations`)
+- Typed env-backed config fields via `generatorEnv(...)` for connection strings, schema lists, naming styles, flags, and placeholder maps
 
 For full generator configuration and troubleshooting, see [`docs/generator-config.md`](./docs/generator-config.md).
 For full CLI commands, help behavior, and troubleshooting, see [`docs/cli-command-reference.md`](./docs/cli-command-reference.md).

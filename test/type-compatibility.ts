@@ -4,6 +4,11 @@ import {
   AthenaClient,
   createModelFormAdapter,
   defineGeneratorConfig,
+  generatorEnv,
+  athenaAuth,
+  defineAthenaAuthConfig,
+  drizzleAdapter,
+  tanstackStartCookies,
   defineDatabase,
   defineModel,
   defineRegistry,
@@ -59,6 +64,7 @@ declare function acceptsNullableUserRow(value: UserRow | null): void
 declare function acceptsNumber(value: number): void
 declare function acceptsString(value: string): void
 declare function acceptsUnknown(value: unknown): void
+declare function acceptsResponsePromise(value: Promise<Response>): void
 declare function acceptsGatewayConnectionPromise(
   value: Promise<AthenaGatewayConnectionResult>,
 ): void
@@ -844,6 +850,78 @@ const generatorConfig = defineGeneratorConfig({
 
 declare function acceptsPostgresProviderKind(value: 'postgres'): void
 acceptsPostgresProviderKind(generatorConfig.provider.kind)
+
+const generatorConfigFromEnv = defineGeneratorConfig({
+  provider: {
+    kind: 'postgres',
+    mode: 'direct',
+    connectionString: generatorEnv('DATABASE_URL', {
+      default: 'postgres://postgres:postgres@127.0.0.1:5432/app_db',
+    }),
+    database: generatorEnv('ATHENA_GENERATOR_DB', { default: 'app_db' }),
+    schemas: generatorEnv.list('ATHENA_GENERATOR_SCHEMAS', { default: ['public', 'athena'] }),
+  },
+  output: {
+    targets: {
+      model: generatorEnv('ATHENA_GENERATOR_MODEL_TARGET', {
+        default: 'src/generated/{database_kebab}/{schema_kebab}/{model_kebab}.model.ts',
+      }),
+      schema: generatorEnv('ATHENA_GENERATOR_SCHEMA_TARGET', {
+        default: 'src/generated/{database_kebab}/{schema_kebab}/index.ts',
+      }),
+      database: generatorEnv('ATHENA_GENERATOR_DATABASE_TARGET', {
+        default: 'src/generated/{database_kebab}/index.ts',
+      }),
+      registry: generatorEnv('ATHENA_GENERATOR_REGISTRY_TARGET', {
+        default: 'src/generated/index.ts',
+      }),
+    },
+    placeholderMap: generatorEnv.json('ATHENA_GENERATOR_PLACEHOLDER_MAP', {
+      default: {
+        namespace: '{database_kebab}/{schema_kebab}',
+      },
+    }),
+  },
+  naming: {
+    modelType: generatorEnv.oneOf(
+      'ATHENA_GENERATOR_MODEL_STYLE',
+      ['preserve', 'camel', 'pascal', 'snake', 'kebab'] as const,
+      { default: 'pascal' },
+    ),
+  },
+  features: {
+    emitRelations: generatorEnv.boolean('ATHENA_GENERATOR_EMIT_RELATIONS', { default: true }),
+  },
+  experimental: {
+    postgresGatewayIntrospection: generatorEnv.boolean(
+      'ATHENA_GENERATOR_POSTGRES_GATEWAY_INTROSPECTION',
+      { default: false },
+    ),
+  },
+})
+
+acceptsPostgresProviderKind(generatorConfigFromEnv.provider.kind)
+
+const authBootstrapConfig = defineAthenaAuthConfig({
+  baseURL: 'https://app.example.com',
+  secret: 'top-secret',
+  database: drizzleAdapter({ binding: 'DB' }, { provider: 'sqlite' }),
+  socialProviders: {
+    github: {
+      clientId: 'github-client-id',
+      clientSecret: 'github-client-secret',
+      scope: ['repo', 'read:org', 'user:email'],
+    },
+  },
+  plugins: [tanstackStartCookies()],
+})
+
+const nativeAuth = athenaAuth(authBootstrapConfig)
+acceptsString(nativeAuth.database.provider)
+acceptsString(nativeAuth.cookies.sessionToken.name)
+acceptsString(nativeAuth.$ERROR_CODES.HANDLER_NOT_CONFIGURED)
+acceptsUnknown(nativeAuth.api)
+acceptsResponsePromise(nativeAuth.handler(new Request('https://app.example.com/api/auth/session')))
 
 defineGeneratorConfig({
   provider: {

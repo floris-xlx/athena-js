@@ -46,12 +46,18 @@ export {
   normalizeSchemaSelection,
   resolveProviderSchemas,
 } from './generator/schema-selection.ts'
+export { generatorEnv } from './generator/env.ts'
 export { resolvePostgresColumnType } from './generator/postgres-type-mapping.ts'
 export {
+  ATHENA_AUTH_BASE_ERROR_CODES,
+  athenaAuth,
   createAuthClient,
+  defineAthenaAuthConfig,
+  drizzleAdapter,
   renderAthenaReactEmail,
   createAuthReactEmailInput,
   defineAuthEmailTemplate,
+  tanstackStartCookies,
 } from './auth/index.ts'
 
 import type {

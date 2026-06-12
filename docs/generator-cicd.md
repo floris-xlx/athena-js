@@ -21,13 +21,17 @@ Use this when CI runners can connect directly to PostgreSQL.
 Config shape (excerpt):
 
 ```ts
-export default {
+import { defineGeneratorConfig, generatorEnv } from "@xylex-group/athena";
+
+export default defineGeneratorConfig({
   provider: {
     kind: "postgres",
     mode: "direct",
-    connectionString: process.env.PG_URL!,
-    database: "app_db",
-    schemas: ["public", "athena"],
+    connectionString: generatorEnv("PG_URL"),
+    database: generatorEnv("ATHENA_GENERATOR_DB", { default: "app_db" }),
+    schemas: generatorEnv.list("ATHENA_GENERATOR_SCHEMAS", {
+      default: ["public", "athena"],
+    }),
   },
   output: {
     targets: {
@@ -38,7 +42,7 @@ export default {
     },
     placeholderMap: {},
   },
-};
+});
 ```
 
 GitHub Actions example:
@@ -83,14 +87,18 @@ Use this when CI cannot open direct PostgreSQL sockets.
 Config shape (excerpt):
 
 ```ts
-export default {
+import { defineGeneratorConfig, generatorEnv } from "@xylex-group/athena";
+
+export default defineGeneratorConfig({
   provider: {
     kind: "postgres",
     mode: "gateway",
-    gatewayUrl: process.env.ATHENA_URL!,
-    apiKey: process.env.ATHENA_API_KEY!,
-    database: "app_db",
-    schemas: ["public", "athena"],
+    gatewayUrl: generatorEnv("ATHENA_URL"),
+    apiKey: generatorEnv("ATHENA_API_KEY"),
+    database: generatorEnv("ATHENA_GENERATOR_DB", { default: "app_db" }),
+    schemas: generatorEnv.list("ATHENA_GENERATOR_SCHEMAS", {
+      default: ["public", "athena"],
+    }),
     backend: "postgresql",
   },
   output: {
@@ -102,7 +110,7 @@ export default {
     },
     placeholderMap: {},
   },
-};
+});
 ```
 
 GitHub Actions example:
