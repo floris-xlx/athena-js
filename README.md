@@ -1,6 +1,6 @@
 # athena-js
 
-current version: `2.4.1`
+current version: `2.5.0`
 `@xylex-group/athena` is a database driver and API gateway SDK that lets you interact with SQL backends over HTTP through a fluent builder API. It ships a typed query builder for Node.js / server environments plus Athena-native React hooks for client-side use.
 
 ## Install
@@ -196,23 +196,19 @@ an Athena-native `athenaAuth({...})` export that matches the Better Auth
 top-level contract:
 
 ```ts
-import { athenaAuth, drizzleAdapter, tanstackStartCookies } from "@xylex-group/athena";
-import { drizzle } from "drizzle-orm/d1";
-import * as schema from "../db/schema";
+import { athenaAuth } from "@xylex-group/athena";
 
 export function getAuth(env: {
-  DB: D1Database;
+  DB: unknown;
   ATHENA_AUTH_URL: string;
   ATHENA_AUTH_SECRET: string;
   GITHUB_CLIENT_ID: string;
   GITHUB_CLIENT_SECRET: string;
 }) {
-  const db = drizzle(env.DB, { schema });
-
   return athenaAuth({
     baseURL: env.ATHENA_AUTH_URL,
     secret: env.ATHENA_AUTH_SECRET,
-    database: drizzleAdapter(db, { provider: "sqlite" }),
+    database: env.DB,
     socialProviders: {
       github: {
         clientId: env.GITHUB_CLIENT_ID,
@@ -220,7 +216,6 @@ export function getAuth(env: {
         scope: ["repo", "read:org", "user:email"],
       },
     },
-    plugins: [tanstackStartCookies()],
   });
 }
 ```
@@ -236,8 +231,6 @@ The returned auth object now carries the Better Auth-style top-level contract:
 This native layer currently covers:
 
 - typed auth bootstrap config
-- native drizzle adapter descriptors
-- native TanStack Start cookie hooks
 - session cookie set/clear helpers via the SDK cookie primitives
 
 It also supports dynamic `baseURL` host resolution plus static/dynamic
