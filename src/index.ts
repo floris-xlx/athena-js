@@ -76,6 +76,7 @@ export {
 export { storageSdkManifest, AthenaStorageError } from './storage/module.ts'
 export type {
   AthenaClientExperimentalOptions,
+  AthenaClientBuilder,
   AthenaQueryTraceOptions,
   AthenaQueryTraceCallsite,
   AthenaQueryTraceEvent,

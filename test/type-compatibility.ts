@@ -121,11 +121,29 @@ const experimentalStorageClient = createClient("https://mirror3.athena-db.com", 
     athenaStorageBackend: true,
   },
 })
+const experimentalStorageBuilderClient = AthenaClient.builder()
+  .url("https://mirror3.athena-db.com")
+  .key("api-key")
+  .experimental({
+    athenaStorageBackend: true,
+  })
+  .build()
+const experimentalStorageOptionsBuilderClient = AthenaClient.builder()
+  .url("https://mirror3.athena-db.com")
+  .key("api-key")
+  .options({
+    experimental: {
+      athenaStorageBackend: true,
+    },
+  })
+  .build()
 const normalizedGatewayUrl = normalizeAthenaGatewayBaseUrl('https://mirror3.athena-db.com/')
 acceptsString(normalizedGatewayUrl)
 acceptsGatewayConnectionPromise(client.verifyConnection())
 acceptsGatewayConnectionPromise(verifyAthenaGatewayUrl('https://mirror3.athena-db.com'))
 acceptsStorageModule(experimentalStorageClient.storage)
+acceptsStorageModule(experimentalStorageBuilderClient.storage)
+acceptsStorageModule(experimentalStorageOptionsBuilderClient.storage)
 acceptsStorageCatalogListPromise(experimentalStorageClient.storage.listStorageCatalogs())
 acceptsStorageUploadUrlPromise(
   experimentalStorageClient.storage.createStorageUploadUrl({

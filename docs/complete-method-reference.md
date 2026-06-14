@@ -12,12 +12,12 @@ Regenerate with: `node scripts/generate-sdk-method-reference.mjs`
 |---|---|---|---|
 | `root.assertInt` | `(value: unknown, label?: string, options?: IntCoercionOptions) => number` | `assertInt(/* ... */)` | Strict integer assertion wrapper around `coerceInt`. Throws a `TypeError` with the provided label when coercion fails. |
 | `root.athenaAuth` | `<TConfig extends AthenaAuthServerConfig>(config: TConfig) => AthenaAuthServer<TConfig>` | `athenaAuth(/* ... */)` | — |
-| `root.AthenaClient.builder` | `() => AthenaClientBuilder` | `const athena = AthenaClient.builder().url("https://...").key("api_key").build()` | Create a fluent builder for a strongly-typed Athena SDK client. |
+| `root.AthenaClient.builder` | `() => AthenaClientBuilder<false>` | `const athena = AthenaClient.builder().url("https://...").key("api_key").build()` | Create a fluent builder for a strongly-typed Athena SDK client. |
 | `root.AthenaClient.fromEnvironment` | `() => AthenaSdkClientWithAuth` | `const athena = AthenaClient.fromEnvironment()` | Build a client from process environment variables. |
 | `root.coerceInt` | `(value: unknown, options?: IntCoercionOptions) => number \| null` | `coerceInt(/* ... */)` | Safely coerces `unknown` values into finite integers. Returns `null` when coercion fails or bounds/strict bigint checks are violated. |
 | `root.createAuthClient` | `(config?: AthenaAuthClientConfig) => AthenaAuthSdkClient` | `createAuthClient()` | — |
 | `root.createAuthReactEmailInput` | `<TProps extends AthenaAuthReactEmailProps = AthenaAuthReactEmailProps>(component: AthenaAuthReactEmailComponent<TProps>, props: TProps, overrides?: Omit<AthenaAuthReactEmailRenderInput, "component" \| "props" \| "element">) => AthenaAuthReactEmailRenderInput` | `createAuthReactEmailInput(/* ... */)` | — |
-| `root.createClient` | `(url: string, apiKey: string, options?: AthenaCreateClientOptions) => AthenaSdkClientWithAuth` | `const athena = createClient("https://...", "api_key")` | Create client (convenience wrapper; use AthenaClient.builder() for full control) |
+| `root.createClient` | `{    (url: string, apiKey: string, options: AthenaCreateClientOptionsWithStorage): AthenaSdkClientWithStorage;    (url: string, apiKey: string, options?: AthenaCreateClientOptions): AthenaSdkClientWithAuth;}` | `const athena = createClient("https://...", "api_key")` | Create client (convenience wrapper; use AthenaClient.builder() for full control) |
 | `root.createModelFormAdapter` | `<TModel extends AnyModelDef>(model: TModel) => ModelFormAdapter<TModel>` | `const adapter = createModelFormAdapter(model)` | Creates a small model-aware adapter for form defaults and payload normalization. |
 | `root.createPostgresIntrospectionProvider` | `(options: PostgresIntrospectionProviderOptions) => SchemaIntrospectionProvider` | `createPostgresIntrospectionProvider(/* ... */)` | Creates a PostgreSQL-backed schema introspection provider. |
 | `root.createTypedClient` | `<TRegistry extends RegistryConstraint, TTenantMap extends TenantKeyMap = Record<never, string>>(registry: TRegistry, url: string, apiKey: string, options?: TypedClientOptions<TTenantMap>) => TypedAthenaClient<TRegistry, TTenantMap>` | `const typed = createTypedClient(registry, "https://...", "api_key")` | Creates a typed client bound to a registry contract and optional tenant header mapping. |
@@ -178,15 +178,15 @@ Regenerate with: `node scripts/generate-sdk-method-reference.mjs`
 | `athena.rpc.select` | `(columns?: string \| string[], options?: AthenaRpcCallOptions) => Promise<AthenaResult<Row[]>>` | `await athena.rpc("list_users").select()` | — |
 | `athena.rpc.single` | `<T = Row>(columns?: string \| string[], options?: AthenaRpcCallOptions) => Promise<AthenaResult<T \| null>>` | `await athena.rpc("list_users").single()` | — |
 | `athena.verifyConnection` | `(options?: AthenaGatewayConnectionOptions) => Promise<AthenaGatewayConnectionResult>` | `athena.verifyConnection()` | — |
-| `AthenaClient.builder.auth` | `(config: AthenaAuthClientConfig) => AthenaClientBuilder` | `AthenaClient.builder().auth(/* ... */)` | Configure Athena Auth client behavior for `client.auth.*` methods. |
-| `AthenaClient.builder.backend` | `(backend: BackendConfig \| BackendType) => AthenaClientBuilder` | `AthenaClient.builder().backend(/* ... */)` | Set the default backend routing strategy. |
-| `AthenaClient.builder.build` | `() => AthenaSdkClientWithAuth` | `const client = AthenaClient.builder().url("https://...").key("...").build()` | Build the immutable Athena SDK client. |
-| `AthenaClient.builder.client` | `(clientName: string) => AthenaClientBuilder` | `AthenaClient.builder().client(/* ... */)` | Set the default Athena client routing key. |
-| `AthenaClient.builder.experimental` | `(options: AthenaClientExperimentalOptions) => AthenaClientBuilder` | `AthenaClient.builder().experimental(/* ... */)` | Configure experimental client options (for example query tracing or findMany AST transport). |
-| `AthenaClient.builder.headers` | `(headers: Record<string, string>) => AthenaClientBuilder` | `AthenaClient.builder().headers(/* ... */)` | Attach static headers to every request. |
-| `AthenaClient.builder.key` | `(apiKey: string) => AthenaClientBuilder` | `AthenaClient.builder().key(/* ... */)` | Set the API key used for all requests. |
-| `AthenaClient.builder.options` | `(options: AthenaCreateClientOptions) => AthenaClientBuilder` | `AthenaClient.builder().options(/* ... */)` | Apply the same options object accepted by `createClient(url, key, options)`. |
-| `AthenaClient.builder.url` | `(url: string) => AthenaClientBuilder` | `AthenaClient.builder().url(/* ... */)` | Set the gateway base URL. |
+| `AthenaClient.builder.auth` | `(config: AthenaAuthClientConfig) => AthenaClientBuilder<StorageEnabled>` | `AthenaClient.builder().auth(/* ... */)` | Configure Athena Auth client behavior for `client.auth.*` methods. |
+| `AthenaClient.builder.backend` | `(backend: BackendConfig \| BackendType) => AthenaClientBuilder<StorageEnabled>` | `AthenaClient.builder().backend(/* ... */)` | Set the default backend routing strategy. |
+| `AthenaClient.builder.build` | `() => StorageEnabled extends true ? AthenaSdkClientWithStorage : AthenaSdkClientWithAuth` | `const client = AthenaClient.builder().url("https://...").key("...").build()` | Build the immutable Athena SDK client. |
+| `AthenaClient.builder.client` | `(clientName: string) => AthenaClientBuilder<StorageEnabled>` | `AthenaClient.builder().client(/* ... */)` | Set the default Athena client routing key. |
+| `AthenaClient.builder.experimental` | `{    (options: AthenaClientExperimentalOptions & {        athenaStorageBackend: true;    }): AthenaClientBuilder<true>;    (options: AthenaClientExperimentalOptions): AthenaClientBuilder<StorageEnabled>;}` | `AthenaClient.builder().experimental(/* ... */)` | Configure experimental client options and narrow the built client when storage is enabled. |
+| `AthenaClient.builder.headers` | `(headers: Record<string, string>) => AthenaClientBuilder<StorageEnabled>` | `AthenaClient.builder().headers(/* ... */)` | Attach static headers to every request. |
+| `AthenaClient.builder.key` | `(apiKey: string) => AthenaClientBuilder<StorageEnabled>` | `AthenaClient.builder().key(/* ... */)` | Set the API key used for all requests. |
+| `AthenaClient.builder.options` | `{    (options: AthenaCreateClientOptionsWithStorage): AthenaClientBuilder<true>;    (options: AthenaCreateClientOptions): AthenaClientBuilder<StorageEnabled>;}` | `AthenaClient.builder().options(/* ... */)` | Apply createClient options and narrow the built client when storage is enabled. |
+| `AthenaClient.builder.url` | `(url: string) => AthenaClientBuilder<StorageEnabled>` | `AthenaClient.builder().url(/* ... */)` | Set the gateway base URL. |
 
 ## Auth Bindings (`createClient(...).auth`) - Exhaustive
 

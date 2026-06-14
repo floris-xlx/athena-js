@@ -724,3 +724,205 @@ test('storage module is exposed only behind experimental athenaStorageBackend fl
     globalThis.fetch = originalFetch
   }
 })
+
+test('storage module routes every storage method with expected envelopes and payloads', async () => {
+  const calls: Array<{ url: string; init?: RequestInit }> = []
+  const originalFetch = globalThis.fetch
+  const file = {
+    id: 'file_1',
+    name: 'report.pdf',
+    bucket: 'documents',
+    organization_id: 'org_1',
+    metadata: {},
+    created_at: '2026-06-13T00:00:00.000Z',
+    updated_at: '2026-06-13T00:00:00.000Z',
+    storage_key: 'reports/report.pdf',
+    is_public: false,
+    status: 'ready',
+  }
+  const upload = {
+    file_id: 'file_1',
+    bucket: 'documents',
+    storage_key: 'reports/report.pdf',
+    purpose: 'upload',
+    url: 'https://upload.example.com',
+    expires_at: '2026-06-13T01:00:00.000Z',
+    expires_at_epoch_seconds: 1781312400,
+    expires_in: 3600,
+    cache_hit: false,
+    cache_layer: 'none',
+  }
+  const catalog = {
+    id: 's3_1',
+    name: 'documents',
+    description: 'Document bucket',
+    endpoint: 'https://s3.example.com',
+    region: 'us-east-1',
+    bucket: 'documents',
+    provider: 's3',
+    is_active: true,
+    created_at: '2026-06-13T00:00:00.000Z',
+    updated_at: '2026-06-13T00:00:00.000Z',
+  }
+  const credential = {
+    ...catalog,
+    id: 'cred_1',
+    s3_id: 's3_1',
+    access_key: 'AKIA_TEST',
+  }
+  const athena = (data: unknown) => ({
+    status: 'ok',
+    message: 'ok',
+    data,
+  })
+
+  globalThis.fetch = async (url, init) => {
+    calls.push({ url: String(url), init })
+    const requestUrl = new URL(String(url))
+    const method = init?.method
+    if (requestUrl.pathname === '/storage/catalogs' && method === 'GET') {
+      return createMockResponse({ data: [catalog] }, 200)
+    }
+    if (requestUrl.pathname === '/storage/catalogs' && method === 'POST') {
+      return createMockResponse(catalog, 201)
+    }
+    if (requestUrl.pathname === '/storage/catalogs/s3%201' && method === 'PATCH') {
+      return createMockResponse({ ...catalog, name: 'documents-v2' }, 200)
+    }
+    if (requestUrl.pathname === '/storage/catalogs/s3%201' && method === 'DELETE') {
+      return createMockResponse({ id: 's3 1', deleted: true }, 200)
+    }
+    if (requestUrl.pathname === '/storage/credentials' && method === 'GET') {
+      return createMockResponse({ data: [credential] }, 200)
+    }
+    if (requestUrl.pathname === '/storage/files/upload-url') {
+      return createMockResponse(athena({ file, upload }), 200)
+    }
+    if (requestUrl.pathname === '/storage/files/upload-urls') {
+      return createMockResponse(athena({ files: [{ file, upload }] }), 200)
+    }
+    if (requestUrl.pathname === '/storage/files/list') {
+      return createMockResponse(athena({ files: [file], count: 1 }), 200)
+    }
+    if (requestUrl.pathname === '/storage/files/file%201/url') {
+      return createMockResponse(athena({ ...upload, purpose: requestUrl.searchParams.get('purpose') }), 200)
+    }
+    if (requestUrl.pathname.startsWith('/storage/files/file%201')) {
+      return createMockResponse(athena({ file }), 200)
+    }
+    if (requestUrl.pathname === '/storage/folders/delete') {
+      return createMockResponse(athena({ s3_id: 's3_1', prefix: 'folder/', processed_files: 2 }), 200)
+    }
+    if (requestUrl.pathname === '/storage/folders/move') {
+      return createMockResponse(athena({ s3_id: 's3_1', prefix: 'new-folder/', processed_files: 2 }), 200)
+    }
+    return createMockResponse({ error: `unexpected ${method} ${requestUrl.pathname}` }, 404)
+  }
+
+  try {
+    const client = AthenaClient.builder()
+      .url('https://athena-db.com')
+      .key('secret')
+      .options({
+        client: 'storage_matrix',
+        experimental: { athenaStorageBackend: true },
+      })
+      .build()
+
+    await client.storage.listStorageCatalogs()
+    await client.storage.createStorageCatalog({
+      name: 'documents',
+      endpoint: 'https://s3.example.com',
+      region: 'us-east-1',
+      access_key_id: 'AKIA_TEST',
+      secret_key: 'secret',
+    })
+    await client.storage.updateStorageCatalog('s3 1', { name: 'documents-v2' })
+    await client.storage.deleteStorageCatalog('s3 1')
+    await client.storage.listStorageCredentials()
+    await client.storage.createStorageUploadUrl({ s3_id: 's3_1', storage_key: 'reports/report.pdf' })
+    await client.storage.createStorageUploadUrls({
+      files: [{ s3_id: 's3_1', storage_key: 'reports/report.pdf' }],
+    })
+    await client.storage.listStorageFiles({ s3_id: 's3_1', prefix: 'reports/' })
+    await client.storage.getStorageFile('file 1')
+    await client.storage.getStorageFileUrl('file 1', { purpose: 'download' })
+    await client.storage.updateStorageFile('file 1', { storage_key: 'reports/archive.pdf' })
+    await client.storage.deleteStorageFile('file 1')
+    await client.storage.setStorageFileVisibility('file 1', { public: true })
+    await client.storage.deleteStorageFolder({ s3_id: 's3_1', prefix: 'folder/' })
+    await client.storage.moveStorageFolder({
+      s3_id: 's3_1',
+      from_prefix: 'folder/',
+      to_prefix: 'new-folder/',
+    })
+
+    const observed = calls.map(call => {
+      const parsedUrl = new URL(call.url)
+      return {
+        method: call.init?.method,
+        path: `${parsedUrl.pathname}${parsedUrl.search}`,
+        body: call.init?.body ? JSON.parse(call.init.body as string) : undefined,
+      }
+    })
+
+    assert.deepEqual(observed, [
+      { method: 'GET', path: '/storage/catalogs', body: undefined },
+      {
+        method: 'POST',
+        path: '/storage/catalogs',
+        body: {
+          name: 'documents',
+          endpoint: 'https://s3.example.com',
+          region: 'us-east-1',
+          access_key_id: 'AKIA_TEST',
+          secret_key: 'secret',
+        },
+      },
+      { method: 'PATCH', path: '/storage/catalogs/s3%201', body: { name: 'documents-v2' } },
+      { method: 'DELETE', path: '/storage/catalogs/s3%201', body: undefined },
+      { method: 'GET', path: '/storage/credentials', body: undefined },
+      {
+        method: 'POST',
+        path: '/storage/files/upload-url',
+        body: { s3_id: 's3_1', storage_key: 'reports/report.pdf' },
+      },
+      {
+        method: 'POST',
+        path: '/storage/files/upload-urls',
+        body: { files: [{ s3_id: 's3_1', storage_key: 'reports/report.pdf' }] },
+      },
+      {
+        method: 'POST',
+        path: '/storage/files/list',
+        body: { s3_id: 's3_1', prefix: 'reports/' },
+      },
+      { method: 'GET', path: '/storage/files/file%201', body: undefined },
+      { method: 'GET', path: '/storage/files/file%201/url?purpose=download', body: undefined },
+      {
+        method: 'PATCH',
+        path: '/storage/files/file%201',
+        body: { storage_key: 'reports/archive.pdf' },
+      },
+      { method: 'DELETE', path: '/storage/files/file%201', body: undefined },
+      {
+        method: 'PATCH',
+        path: '/storage/files/file%201/visibility',
+        body: { public: true },
+      },
+      {
+        method: 'POST',
+        path: '/storage/folders/delete',
+        body: { s3_id: 's3_1', prefix: 'folder/' },
+      },
+      {
+        method: 'POST',
+        path: '/storage/folders/move',
+        body: { s3_id: 's3_1', from_prefix: 'folder/', to_prefix: 'new-folder/' },
+      },
+    ])
+    assert.equal((calls[0].init?.headers as Record<string, string>)['X-Athena-Client'], 'storage_matrix')
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})

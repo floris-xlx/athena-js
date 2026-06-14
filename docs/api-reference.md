@@ -82,6 +82,7 @@ function createClient(
   options?: Pick<AthenaGatewayCallOptions, "client" | "headers" | "backend"> & {
     auth?: AthenaAuthClientConfig
     experimental?: {
+      athenaStorageBackend?: boolean
       enableErrorNormalization?: boolean
       findManyAst?: boolean
       retryReads?: boolean
@@ -91,6 +92,7 @@ function createClient(
 ): AthenaSdkClientWithAuth
 ```
 
+`experimental.athenaStorageBackend` exposes the experimental `client.storage.*` bindings. Default clients do not include `.storage`; `createClient(..., { experimental: { athenaStorageBackend: true } })`, `AthenaClient.builder().experimental(...)`, and `AthenaClient.builder().options(...)` narrow the returned client type to `AthenaSdkClientWithStorage`.
 `experimental.enableErrorNormalization` is deprecated and retained as a no-op compatibility flag because failed `AthenaResult` values now expose structured normalized `error` objects by default.
 `experimental.findManyAst` opt-ins clean `findMany(...)` calls to use direct AST bodies on `/gateway/fetch` when the request is lossless there; shorthand `where` values are normalized, UUID-like equality filters still fall back to the legacy query path, and nested relation select strings stay off SQL query fallback.
 `experimental.retryReads` enables fixed-policy retries for retryable read failures on `select`, `findMany(...)`, and `query(...)`. It performs two additional attempts internally and does not retry writes.
@@ -331,16 +333,18 @@ Throws when URL or key is missing.
 ### `AthenaClient.builder()`
 
 ```ts
-interface AthenaClientBuilder {
-  url(url: string): AthenaClientBuilder
-  key(apiKey: string): AthenaClientBuilder
-  backend(backend: BackendConfig | BackendType): AthenaClientBuilder
-  client(clientName: string): AthenaClientBuilder
-  headers(headers: Record<string, string>): AthenaClientBuilder
-  auth(config: AthenaAuthClientConfig): AthenaClientBuilder
-  experimental(options: AthenaClientExperimentalOptions): AthenaClientBuilder
-  options(options: AthenaCreateClientOptions): AthenaClientBuilder
-  build(): AthenaSdkClientWithAuth
+interface AthenaClientBuilder<StorageEnabled extends boolean = false> {
+  url(url: string): AthenaClientBuilder<StorageEnabled>
+  key(apiKey: string): AthenaClientBuilder<StorageEnabled>
+  backend(backend: BackendConfig | BackendType): AthenaClientBuilder<StorageEnabled>
+  client(clientName: string): AthenaClientBuilder<StorageEnabled>
+  headers(headers: Record<string, string>): AthenaClientBuilder<StorageEnabled>
+  auth(config: AthenaAuthClientConfig): AthenaClientBuilder<StorageEnabled>
+  experimental(options: AthenaClientExperimentalOptions & { athenaStorageBackend: true }): AthenaClientBuilder<true>
+  experimental(options: AthenaClientExperimentalOptions): AthenaClientBuilder<StorageEnabled>
+  options(options: AthenaCreateClientOptionsWithStorage): AthenaClientBuilder<true>
+  options(options: AthenaCreateClientOptions): AthenaClientBuilder<StorageEnabled>
+  build(): StorageEnabled extends true ? AthenaSdkClientWithStorage : AthenaSdkClientWithAuth
 }
 ```
 
@@ -348,7 +352,8 @@ interface AthenaClientBuilder {
 
 Behavior notes:
 
-- `build()` returns `AthenaSdkClientWithAuth` (same contract as `createClient(...)`)
+- `build()` returns `AthenaSdkClientWithAuth` by default (same contract as `createClient(...)`)
+- storage-enabled builder calls narrow `build()` to `AthenaSdkClientWithStorage`
 - `auth(...)`, `experimental(...)`, and `options(...)` are additive
 - repeated `auth(...)`/`options({ auth })` calls merge auth headers and fields
 - repeated `experimental(...)`/`options({ experimental })` calls merge flags (including `traceQueries` object config)
@@ -396,6 +401,10 @@ interface AthenaSdkClient {
 
 interface AthenaSdkClientWithAuth extends AthenaSdkClient {
   auth: AthenaAuthBindings
+}
+
+interface AthenaSdkClientWithStorage extends AthenaSdkClientWithAuth {
+  storage: AthenaStorageModule
 }
 
 interface AthenaFromOptions {
@@ -446,6 +455,44 @@ interface AthenaDbModule {
   query<Row = unknown>(query: string, options?: AthenaGatewayCallOptions): Promise<AthenaResult<Row[]>>
 }
 ```
+
+### Storage module (experimental)
+
+Storage bindings are only available when `experimental.athenaStorageBackend` is enabled.
+
+```ts
+const athena = createClient(url, apiKey, {
+  experimental: { athenaStorageBackend: true },
+})
+
+const { file, upload } = await athena.storage.createStorageUploadUrl({
+  s3_id: "s3_1",
+  bucket: "documents",
+  storage_key: "reports/report.pdf",
+})
+```
+
+```ts
+interface AthenaStorageModule {
+  listStorageCatalogs(options?: AthenaStorageCallOptions): Promise<{ data: S3CatalogItem[] }>
+  createStorageCatalog(input: CreateStorageCatalogRequest, options?: AthenaStorageCallOptions): Promise<S3CatalogItem>
+  updateStorageCatalog(id: string, input: UpdateStorageCatalogRequest, options?: AthenaStorageCallOptions): Promise<S3CatalogItem>
+  deleteStorageCatalog(id: string, options?: AthenaStorageCallOptions): Promise<{ id: string; deleted: boolean }>
+  listStorageCredentials(options?: AthenaStorageCallOptions): Promise<{ data: S3CredentialListItem[] }>
+  createStorageUploadUrl(input: CreateStorageUploadUrlRequest, options?: AthenaStorageCallOptions): Promise<StorageUploadUrlResponse>
+  createStorageUploadUrls(input: CreateStorageUploadUrlsRequest, options?: AthenaStorageCallOptions): Promise<StorageBatchUploadUrlResponse>
+  listStorageFiles(input: ListStorageFilesRequest, options?: AthenaStorageCallOptions): Promise<StorageListFilesResponse>
+  getStorageFile(fileId: string, options?: AthenaStorageCallOptions): Promise<StorageFileMutationResponse>
+  getStorageFileUrl(fileId: string, query?: GetStorageFileUrlQuery, options?: AthenaStorageCallOptions): Promise<PresignedFileUrlResponse>
+  updateStorageFile(fileId: string, input: UpdateStorageFileRequest, options?: AthenaStorageCallOptions): Promise<StorageFileMutationResponse>
+  deleteStorageFile(fileId: string, options?: AthenaStorageCallOptions): Promise<StorageFileMutationResponse>
+  setStorageFileVisibility(fileId: string, input: SetStorageFileVisibilityRequest, options?: AthenaStorageCallOptions): Promise<StorageFileMutationResponse>
+  deleteStorageFolder(input: DeleteStorageFolderRequest, options?: AthenaStorageCallOptions): Promise<StorageFolderMutationResponse>
+  moveStorageFolder(input: MoveStorageFolderRequest, options?: AthenaStorageCallOptions): Promise<StorageFolderMutationResponse>
+}
+```
+
+Raw storage endpoints return the parsed response body. Athena-envelope storage endpoints unwrap `{ status, message, data }` and return `data`. Storage request failures throw `AthenaStorageError` with `code`, `status`, `endpoint`, `method`, and `raw` fields.
 
 ## Builder contracts
 

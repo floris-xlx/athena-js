@@ -2253,6 +2253,17 @@ export interface AthenaSdkClientWithStorage extends AthenaSdkClientWithAuth {
   storage: AthenaStorageModule
 }
 
+export interface AthenaCreateClientOptions extends Pick<AthenaGatewayCallOptions, 'client' | 'headers' | 'backend'> {
+  auth?: AthenaAuthClientConfig
+  experimental?: AthenaClientExperimentalOptions
+}
+
+export interface AthenaCreateClientOptionsWithStorage extends AthenaCreateClientOptions {
+  experimental: AthenaClientExperimentalOptions & {
+    athenaStorageBackend: true
+  }
+}
+
 /** Client config for builder */
 export interface AthenaClientConfig {
   baseUrl: string
@@ -2343,25 +2354,27 @@ function createClientFromConfig(config: AthenaClientConfig): AthenaSdkClientWith
   return sdkClient
 }
 
-export interface AthenaClientBuilder {
+export interface AthenaClientBuilder<StorageEnabled extends boolean = false> {
   /** Set the gateway base URL. */
-  url(url: string): AthenaClientBuilder
+  url(url: string): AthenaClientBuilder<StorageEnabled>
   /** Set the API key used for all requests. */
-  key(apiKey: string): AthenaClientBuilder
+  key(apiKey: string): AthenaClientBuilder<StorageEnabled>
   /** Set the default backend routing strategy. */
-  backend(backend: BackendConfig | BackendType): AthenaClientBuilder
+  backend(backend: BackendConfig | BackendType): AthenaClientBuilder<StorageEnabled>
   /** Set the default Athena client routing key. */
-  client(clientName: string): AthenaClientBuilder
+  client(clientName: string): AthenaClientBuilder<StorageEnabled>
   /** Attach static headers to every request. */
-  headers(headers: Record<string, string>): AthenaClientBuilder
+  headers(headers: Record<string, string>): AthenaClientBuilder<StorageEnabled>
   /** Configure Athena Auth client behavior for `client.auth.*` methods. */
-  auth(config: AthenaAuthClientConfig): AthenaClientBuilder
-  /** Configure experimental client options (for example query tracing or findMany AST transport). */
-  experimental(options: AthenaClientExperimentalOptions): AthenaClientBuilder
-  /** Apply the same options object accepted by `createClient(url, key, options)`. */
-  options(options: AthenaCreateClientOptions): AthenaClientBuilder
+  auth(config: AthenaAuthClientConfig): AthenaClientBuilder<StorageEnabled>
+  /** Configure experimental client options and narrow the built client when storage is enabled. */
+  experimental(options: AthenaClientExperimentalOptions & { athenaStorageBackend: true }): AthenaClientBuilder<true>
+  experimental(options: AthenaClientExperimentalOptions): AthenaClientBuilder<StorageEnabled>
+  /** Apply createClient options and narrow the built client when storage is enabled. */
+  options(options: AthenaCreateClientOptionsWithStorage): AthenaClientBuilder<true>
+  options(options: AthenaCreateClientOptions): AthenaClientBuilder<StorageEnabled>
   /** Build the immutable Athena SDK client. */
-  build(): AthenaSdkClientWithAuth
+  build(): StorageEnabled extends true ? AthenaSdkClientWithStorage : AthenaSdkClientWithAuth
 }
 
 const DEFAULT_BACKEND: BackendConfig = { type: 'athena' }
@@ -2410,7 +2423,7 @@ function mergeExperimentalOptions(
   return merged
 }
 
-class AthenaClientBuilderImpl implements AthenaClientBuilder {
+class AthenaClientBuilderImpl implements AthenaClientBuilder<false> {
   private baseUrl?: string
   private apiKey?: string
   private backendConfig: BackendConfig = DEFAULT_BACKEND
@@ -2419,42 +2432,46 @@ class AthenaClientBuilderImpl implements AthenaClientBuilder {
   private authConfig?: AthenaAuthClientConfig
   private experimentalOptions?: AthenaClientExperimentalOptions
 
-  url(url: string): AthenaClientBuilder {
+  url(url: string): AthenaClientBuilder<false> {
     this.baseUrl = url
     return this
   }
 
-  key(apiKey: string): AthenaClientBuilder {
+  key(apiKey: string): AthenaClientBuilder<false> {
     this.apiKey = apiKey
     return this
   }
 
-  backend(backend: BackendConfig | BackendType): AthenaClientBuilder {
+  backend(backend: BackendConfig | BackendType): AthenaClientBuilder<false> {
     this.backendConfig = toBackendConfig(backend)
     return this
   }
 
-  client(clientName: string): AthenaClientBuilder {
+  client(clientName: string): AthenaClientBuilder<false> {
     this.clientName = clientName
     return this
   }
 
-  headers(headers: Record<string, string>): AthenaClientBuilder {
+  headers(headers: Record<string, string>): AthenaClientBuilder<false> {
     this.defaultHeaders = headers
     return this
   }
 
-  auth(config: AthenaAuthClientConfig): AthenaClientBuilder {
+  auth(config: AthenaAuthClientConfig): AthenaClientBuilder<false> {
     this.authConfig = mergeAuthClientConfig(this.authConfig, config)
     return this
   }
 
-  experimental(options: AthenaClientExperimentalOptions): AthenaClientBuilder {
+  experimental(options: AthenaClientExperimentalOptions & { athenaStorageBackend: true }): AthenaClientBuilder<true>
+  experimental(options: AthenaClientExperimentalOptions): AthenaClientBuilder<false>
+  experimental(options: AthenaClientExperimentalOptions): AthenaClientBuilder<false> | AthenaClientBuilder<true> {
     this.experimentalOptions = mergeExperimentalOptions(this.experimentalOptions, options)
-    return this
+    return options.athenaStorageBackend ? this as unknown as AthenaClientBuilder<true> : this
   }
 
-  options(options: AthenaCreateClientOptions): AthenaClientBuilder {
+  options(options: AthenaCreateClientOptionsWithStorage): AthenaClientBuilder<true>
+  options(options: AthenaCreateClientOptions): AthenaClientBuilder<false>
+  options(options: AthenaCreateClientOptions): AthenaClientBuilder<false> | AthenaClientBuilder<true> {
     if (options.client !== undefined) {
       this.clientName = options.client
     }
@@ -2473,7 +2490,7 @@ class AthenaClientBuilderImpl implements AthenaClientBuilder {
     if (options.experimental !== undefined) {
       this.experimentalOptions = mergeExperimentalOptions(this.experimentalOptions, options.experimental)
     }
-    return this
+    return options.experimental?.athenaStorageBackend ? this as unknown as AthenaClientBuilder<true> : this
   }
 
   build(): AthenaSdkClientWithAuth {
@@ -2496,7 +2513,7 @@ class AthenaClientBuilderImpl implements AthenaClientBuilder {
 /** Canonical Athena client factory with builder-based configuration. */
 export class AthenaClient {
   /** Create a fluent builder for a strongly-typed Athena SDK client. */
-  static builder(): AthenaClientBuilder {
+  static builder(): AthenaClientBuilder<false> {
     return new AthenaClientBuilderImpl()
   }
 
@@ -2519,17 +2536,6 @@ export class AthenaClient {
       .url(url)
       .key(key)
       .build()
-  }
-}
-
-export interface AthenaCreateClientOptions extends Pick<AthenaGatewayCallOptions, 'client' | 'headers' | 'backend'> {
-  auth?: AthenaAuthClientConfig
-  experimental?: AthenaClientExperimentalOptions
-}
-
-export interface AthenaCreateClientOptionsWithStorage extends AthenaCreateClientOptions {
-  experimental: AthenaClientExperimentalOptions & {
-    athenaStorageBackend: true
   }
 }
 
