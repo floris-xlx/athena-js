@@ -944,7 +944,14 @@ test('storage module routes every storage method with expected envelopes and pay
         body: { s3_id: 's3_1', from_prefix: 'folder/', to_prefix: 'new-folder/' },
       },
     ])
-    assert.equal((calls[0].init?.headers as Record<string, string>)['X-Athena-Client'], 'storage_matrix')
+    for (const call of calls) {
+      assert.equal((call.init?.headers as Record<string, string>)['X-Athena-Client'], 'storage_matrix')
+    }
+    const fileCalls = calls.filter(call => new URL(call.url).pathname.startsWith('/storage/files/'))
+    assert.equal(fileCalls.length, 9)
+    for (const call of fileCalls) {
+      assert.equal((call.init?.headers as Record<string, string>)['X-Athena-Client'], 'storage_matrix')
+    }
   } finally {
     globalThis.fetch = originalFetch
   }
