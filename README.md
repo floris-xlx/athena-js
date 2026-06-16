@@ -375,7 +375,7 @@ requireAffected(inserted, { min: 1 }, { table: "users", operation: "insert" });
 ### Structured errors by default
 
 ```ts
-import { createClient, normalizeAthenaError } from "@xylex-group/athena";
+import { createClient } from "@xylex-group/athena";
 
 const athena = createClient(ATHENA_URL, ATHENA_API_KEY);
 
@@ -391,7 +391,7 @@ if (error) {
 
 `result.error` already carries normalized `kind` values (`unique_violation`, `validation`, `auth`, `rate_limit`, `transient`, etc.) plus operation metadata.
 
-`normalizeAthenaError(result)` still exists when you need the normalized envelope from an arbitrary thrown value or mixed unknown input.
+`normalizeAthenaError(...)` is deprecated. Prefer `result.error` on failed results and the structured fields already attached to thrown SDK errors.
 
 ### Query tracing (experimental)
 

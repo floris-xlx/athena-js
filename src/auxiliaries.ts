@@ -493,6 +493,10 @@ export function isOk<T>(result: AthenaResult<T>): boolean {
 }
 
 /**
+ * @deprecated Prefer `result.error` on failed `AthenaResult` values and the
+ * structured fields already attached to thrown SDK errors. This helper is
+ * retained for compatibility with mixed unknown inputs.
+ *
  * Normalizes any Athena failure shape into a stable, typed error envelope.
  *
  * Accepts `AthenaResult`, `AthenaGatewayError`, native `Error`, or unknown values.

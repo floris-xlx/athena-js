@@ -65,6 +65,23 @@ function getDocumentation(symbol) {
   return ts.displayPartsToString(symbol.getDocumentationComment(checker)).replace(/\s+/g, ' ').trim()
 }
 
+function getJsDocTagText(text) {
+  if (typeof text === 'string') return text
+  if (!Array.isArray(text)) return ''
+  return text
+    .map(part => (typeof part === 'string' ? part : part.text ?? ''))
+    .join('')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function getDeprecatedNotice(symbol) {
+  if (!symbol || typeof symbol.getJsDocTags !== 'function') return ''
+  const tag = symbol.getJsDocTags().find(candidate => candidate.name === 'deprecated')
+  if (!tag) return ''
+  return getJsDocTagText(tag.text) || 'This API is deprecated.'
+}
+
 function getTypeText(type, contextNode) {
   return checker.typeToString(
     type,
@@ -119,6 +136,7 @@ function collectInterfaceMethods(sourceFilePath, interfaceName, prefix, options 
             signature: getTypeText(propType, decl),
             minArgs: callSignatures[0]?.minArgumentCount ?? 0,
             docs: getDocumentation(prop),
+            deprecated: getDeprecatedNotice(prop),
           })
         }
       }
@@ -178,6 +196,7 @@ function collectClassMethods(sourceFilePath, className, prefix) {
       signature: getTypeText(memberType, member),
       minArgs: callSignature?.minArgumentCount ?? 0,
       docs: getDocumentation(symbol),
+      deprecated: getDeprecatedNotice(symbol),
     })
   }
 
@@ -190,6 +209,7 @@ function collectClassMethods(sourceFilePath, className, prefix) {
       signature: signature ? checker.signatureToString(signature, ctor, ts.TypeFormatFlags.NoTruncation) : 'constructor()',
       minArgs: signature?.minArgumentCount ?? 0,
       docs: '',
+      deprecated: '',
     })
   }
 
@@ -240,6 +260,7 @@ function collectExportedFunctionsFromEntry(sourceFilePath, prefix) {
       signature: getTypeText(type, localDecl),
       minArgs: callSig.minArgumentCount,
       docs: getDocumentation(targetSymbol),
+      deprecated: getDeprecatedNotice(targetSymbol),
     })
   }
 
@@ -363,7 +384,10 @@ function toMarkdownTable(entries) {
       const signature = sanitizeSignature(entry.signature)
         .replace(/\|/g, '\\|')
         .replace(/\n/g, ' ')
-      const docs = entry.docs.replace(/\|/g, '\\|')
+      const docs = [entry.docs, entry.deprecated ? `Deprecated: ${entry.deprecated}` : '']
+        .filter(Boolean)
+        .join(' ')
+        .replace(/\|/g, '\\|')
       const example = exampleForPath(entry.path, entry.minArgs).replace(/\|/g, '\\|')
       return `| \`${entry.path}\` | \`${signature}\` | \`${example}\` | ${docs || '—'} |`
     })

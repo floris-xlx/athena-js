@@ -1079,7 +1079,7 @@ type AthenaErrorCategory = "transport" | "client" | "server" | "database" | "unk
 ### Main helpers
 
 - `isOk(result)`
-- `normalizeAthenaError(input, context?)`
+- `normalizeAthenaError(input, context?)` (deprecated)
 - `unwrapRows(result, options?)`
 - `unwrap(result, options?)`
 - `unwrapOne(result, options?)`
@@ -1089,6 +1089,8 @@ type AthenaErrorCategory = "transport" | "client" | "server" | "database" | "unk
 - `assertInt(value, label?, options?)`
 - `withRetry(config, fn)`
 - `AthenaError` class
+
+`normalizeAthenaError(...)` is deprecated. Prefer the structured `result.error` envelope on failed `AthenaResult` values and the fields already attached to thrown SDK errors.
 
 ## Typed schema and registry API
 
