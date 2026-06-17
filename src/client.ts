@@ -31,6 +31,7 @@ import { createDbModule } from './db/module.ts'
 import type { AthenaDbModule } from './db/module.ts'
 import { createStorageModule } from './storage/module.ts'
 import type { AthenaStorageClientConfig, AthenaStorageModule } from './storage/module.ts'
+import { createAthenaClientBuilder, toBackendConfig } from './client-builder.ts'
 import {
   compileOrderBy,
   compileSelectShape,
@@ -53,6 +54,42 @@ import {
   toFindManyAstOrder,
 } from './query-transport.ts'
 import type { AthenaFindManyAstPayload } from './query-transport.ts'
+import {
+  buildDeleteDebugAst,
+  buildFindManyCompiledDebugAst,
+  buildFindManyDirectDebugAst,
+  buildInsertDebugAst,
+  buildRawQueryDebugAst,
+  buildRpcDebugAst,
+  buildSelectDebugAst,
+  buildUpdateDebugAst,
+  buildUpsertDebugAst,
+} from './query-debug-ast.ts'
+import type { AthenaQueryDebugAst } from './query-debug-ast.ts'
+import {
+  captureTraceCallsite,
+  createQueryTracer,
+  createTraceCallsiteStore,
+  executeWithQueryTrace,
+} from './query-tracing.ts'
+import type {
+  AthenaQueryTracer,
+} from './query-tracing.ts'
+import {
+  isAthenaModelTarget,
+  resolveAthenaModelTargetTableName,
+} from './schema/model-target.ts'
+import type {
+  AthenaSelectInput,
+  AthenaTypecheckedColumnKey,
+  AthenaValidatedSelectInput,
+} from './select-column-types.ts'
+import type {
+  AthenaModelTarget,
+  InsertOf,
+  RowOf,
+  UpdateOf,
+} from './schema/types.ts'
 
 export interface AthenaResult<T> {
   data: T | null
@@ -107,6 +144,21 @@ export interface AthenaClientExperimentalOptions {
    */
   traceQueries?: boolean | AthenaQueryTraceOptions
   /**
+   * Build and attach a normalized operation AST for runtime debugging.
+   *
+   * When enabled, successful Athena results expose a non-enumerable debug AST
+   * that can be read with `getAthenaDebugAst(...)`. If tracing is also enabled,
+   * the same AST is included on emitted trace events.
+   */
+  debugAst?: boolean
+  /**
+   * Compile-time opt-in for validating simple `select(...)`, `order(...)`, and
+   * RPC filter column names against known row keys.
+   *
+   * This flag is type-only. It does not change runtime request behavior.
+   */
+  typecheckColumns?: boolean
+  /**
    * Send the original `findMany(...)` AST body for clean object-select reads.
    * This requires gateway support and falls back to legacy compiled transport
    * when a chain carries filter/pagination state that the AST payload cannot
@@ -148,6 +200,7 @@ export interface AthenaQueryTraceEvent {
   functionName?: string
   sql: string
   payload: unknown
+  ast?: AthenaQueryDebugAst
   options?: AthenaGatewayCallOptions | AthenaRpcCallOptions
   callsite: AthenaQueryTraceCallsite | null
   outcome?: {
@@ -177,65 +230,45 @@ type ConditionCastHints = {
 }
 
 type MutationSingleResult<Result> = Result extends Array<infer Item> ? Item | null : Result | null
+type MutationResultRow<Result> = Result extends Array<infer Item> ? Item : Result
 type AthenaRowShape = Record<string, AthenaJsonValue | undefined>
 type FilterColumnKey<Row> = Extract<keyof NonNullable<Row>, string>
 type ResolvedFilterColumnKey<Row> = [FilterColumnKey<Row>] extends [never] ? string : FilterColumnKey<Row>
+type SelectColumnsFor<
+  Row,
+  TStrict extends boolean,
+  TValue extends AthenaSelectInput,
+> = TStrict extends true ? AthenaValidatedSelectInput<Row, TValue> : TValue
 const DEFAULT_COLUMNS = '*'
 const SAFE_CAST_PATTERN = /^[a-z_][a-z0-9_]*(?:\[\])?$/i
 const ATHENA_NORMALIZED_ERROR_KEY = '__athenaNormalizedError' as const
-const QUERY_TRACE_STACK_SKIP_PATTERNS = [
-  'src\\client.ts',
-  'src/client.ts',
-  'dist\\client.',
-  'dist/client.',
-  'node_modules\\@xylex-group\\athena',
-  'node_modules/@xylex-group/athena',
-  'node:internal',
-  'internal/process',
-] as const
 
-type AthenaTraceOperation = AthenaQueryTraceEvent['operation']
-type AthenaTraceEndpoint = AthenaQueryTraceEvent['endpoint']
+type SelectDebugAstFactory = (input: {
+  tableName: string
+  columns: string | string[]
+  executionState: TableBuilderState
+  plan: ReturnType<typeof createSelectTransportPlan>
+}) => AthenaQueryDebugAst
 
-interface AthenaTraceContext {
-  operation: AthenaTraceOperation
-  endpoint: AthenaTraceEndpoint
-  table?: string
-  functionName?: string
-  sql: string
-  payload: unknown
-  options?: AthenaGatewayCallOptions | AthenaRpcCallOptions
-}
-
-type AthenaQueryTracer = {
-  captureCallsite: () => AthenaQueryTraceCallsite | null
-  publishSuccess: <T>(
-    context: AthenaTraceContext,
-    result: AthenaResult<T>,
-    durationMs: number,
-    callsite: AthenaQueryTraceCallsite | null,
-  ) => void
-  publishFailure: (
-    context: AthenaTraceContext,
-    error: unknown,
-    durationMs: number,
-    callsite: AthenaQueryTraceCallsite | null,
-  ) => void
-}
-
-type AthenaTraceCallsiteStore = {
-  resolve: (callsite?: AthenaQueryTraceCallsite | null) => AthenaQueryTraceCallsite | null
-}
-
-export interface MutationQuery<Result> extends PromiseLike<AthenaResult<Result>> {
-  select(columns?: string | string[], options?: AthenaGatewayCallOptions): Promise<AthenaResult<Result>>
-  returning(columns?: string | string[], options?: AthenaGatewayCallOptions): Promise<AthenaResult<Result>>
-  single(
-    columns?: string | string[],
+export interface MutationQuery<
+  Result,
+  Row = MutationResultRow<Result>,
+  TStrict extends boolean = false,
+> extends PromiseLike<AthenaResult<Result>> {
+  select<const TColumns extends AthenaSelectInput = string>(
+    columns?: SelectColumnsFor<Row, TStrict, TColumns>,
+    options?: AthenaGatewayCallOptions,
+  ): Promise<AthenaResult<Result>>
+  returning<const TColumns extends AthenaSelectInput = string>(
+    columns?: SelectColumnsFor<Row, TStrict, TColumns>,
+    options?: AthenaGatewayCallOptions,
+  ): Promise<AthenaResult<Result>>
+  single<const TColumns extends AthenaSelectInput = string>(
+    columns?: SelectColumnsFor<Row, TStrict, TColumns>,
     options?: AthenaGatewayCallOptions,
   ): Promise<AthenaResult<MutationSingleResult<Result>>>
-  maybeSingle(
-    columns?: string | string[],
+  maybeSingle<const TColumns extends AthenaSelectInput = string>(
+    columns?: SelectColumnsFor<Row, TStrict, TColumns>,
     options?: AthenaGatewayCallOptions,
   ): Promise<AthenaResult<MutationSingleResult<Result>>>
   then<TResult1 = AthenaResult<Result>, TResult2 = never>(
@@ -428,195 +461,6 @@ function createResultError<T>(
   }
 }
 
-function parseQueryTraceCallsiteFrame(frame: string): AthenaQueryTraceCallsite | null {
-  const trimmed = frame.trim()
-  if (!trimmed) {
-    return null
-  }
-
-  let body = trimmed.replace(/^at\s+/, '')
-  if (body.startsWith('async ')) {
-    body = body.slice(6)
-  }
-
-  let functionName: string | undefined
-  let location = body
-  const wrappedMatch = body.match(/^(.*?)\s+\((.*)\)$/)
-  if (wrappedMatch) {
-    functionName = wrappedMatch[1].trim() || undefined
-    location = wrappedMatch[2].trim()
-  }
-
-  const locationMatch = location.match(/^(.*):(\d+):(\d+)$/)
-  if (!locationMatch) {
-    return null
-  }
-
-  const filePath = locationMatch[1].replace(/^file:\/\//, '')
-  const line = Number(locationMatch[2])
-  const column = Number(locationMatch[3])
-  if (!Number.isFinite(line) || !Number.isFinite(column)) {
-    return null
-  }
-
-  const normalizedPath = filePath.replace(/\\/g, '/')
-  const fileName = normalizedPath.split('/').at(-1) ?? filePath
-  return {
-    filePath,
-    fileName,
-    line,
-    column,
-    frame: trimmed,
-    functionName,
-  }
-}
-
-function captureQueryTraceCallsite(): AthenaQueryTraceCallsite | null {
-  const stack = new Error().stack
-  if (!stack) return null
-  const frames = stack
-    .split('\n')
-    .slice(2)
-    .map(frame => frame.trim())
-    .filter(Boolean)
-
-  for (const frame of frames) {
-    if (QUERY_TRACE_STACK_SKIP_PATTERNS.some(pattern => frame.includes(pattern))) {
-      continue
-    }
-    const callsite = parseQueryTraceCallsiteFrame(frame)
-    if (callsite) return callsite
-  }
-
-  const fallback = frames.find(frame => !frame.includes('captureQueryTraceCallsite'))
-  return fallback ? parseQueryTraceCallsiteFrame(fallback) : null
-}
-
-function defaultQueryTraceLogger(event: AthenaQueryTraceEvent): void {
-  const target = event.table ?? event.functionName ?? 'gateway'
-  const outcomeState = event.outcome?.error ? 'error' : 'ok'
-  const banner = `[athena-js][trace] ${event.operation.toUpperCase()} ${event.endpoint} ${target} ${event.durationMs}ms ${outcomeState}`
-  console.info(banner, event)
-}
-
-function captureTraceCallsite(tracer?: AthenaQueryTracer): AthenaQueryTraceCallsite | null {
-  return tracer?.captureCallsite() ?? null
-}
-
-function createTraceCallsiteStore(
-  tracer?: AthenaQueryTracer,
-  initialCallsite?: AthenaQueryTraceCallsite | null,
-): AthenaTraceCallsiteStore {
-  let storedCallsite = initialCallsite ?? undefined
-
-  return {
-    resolve(callsite) {
-      if (callsite) {
-        storedCallsite = callsite
-        return callsite
-      }
-      if (storedCallsite !== undefined) {
-        return storedCallsite
-      }
-      const capturedCallsite = captureTraceCallsite(tracer)
-      if (capturedCallsite) {
-        storedCallsite = capturedCallsite
-      }
-      return capturedCallsite
-    },
-  }
-}
-
-function createQueryTracer(experimental?: AthenaClientExperimentalOptions): AthenaQueryTracer | undefined {
-  const traceOption = experimental?.traceQueries
-  if (!traceOption) {
-    return undefined
-  }
-
-  const logger =
-    typeof traceOption === 'object' && traceOption.logger ? traceOption.logger : defaultQueryTraceLogger
-
-  const emit = (event: AthenaQueryTraceEvent) => {
-    try {
-      logger(event)
-    } catch (error) {
-      console.warn('[athena-js][trace] logger failed', error)
-    }
-  }
-
-  return {
-    captureCallsite: captureQueryTraceCallsite,
-    publishSuccess<T>(
-      context: AthenaTraceContext,
-      result: AthenaResult<T>,
-      durationMs: number,
-      callsite: AthenaQueryTraceCallsite | null,
-    ) {
-      emit({
-        timestamp: new Date().toISOString(),
-        durationMs,
-        operation: context.operation,
-        endpoint: context.endpoint,
-        table: context.table,
-        functionName: context.functionName,
-        sql: context.sql,
-        payload: context.payload,
-        options: context.options,
-        callsite,
-        outcome: {
-          status: result.status,
-          error: result.error,
-          errorDetails: result.errorDetails ?? null,
-          count: result.count ?? null,
-          data: result.data,
-          raw: result.raw,
-        },
-      })
-    },
-    publishFailure(
-      context: AthenaTraceContext,
-      error: unknown,
-      durationMs: number,
-      callsite: AthenaQueryTraceCallsite | null,
-    ) {
-      emit({
-        timestamp: new Date().toISOString(),
-        durationMs,
-        operation: context.operation,
-        endpoint: context.endpoint,
-        table: context.table,
-        functionName: context.functionName,
-        sql: context.sql,
-        payload: context.payload,
-        options: context.options,
-        callsite,
-        thrownError: error,
-      })
-    },
-  }
-}
-
-async function executeWithQueryTrace<T>(
-  tracer: AthenaQueryTracer | undefined,
-  context: AthenaTraceContext,
-  runner: () => Promise<AthenaResult<T>>,
-  callsiteOverride?: AthenaQueryTraceCallsite | null,
-): Promise<AthenaResult<T>> {
-  if (!tracer) {
-    return runner()
-  }
-
-  const callsite = callsiteOverride ?? tracer.captureCallsite()
-  const startedAt = Date.now()
-  try {
-    const result = await runner()
-    tracer.publishSuccess(context, result, Date.now() - startedAt, callsite)
-    return result
-  } catch (error) {
-    tracer.publishFailure(context, error, Date.now() - startedAt, callsite)
-    throw error
-  }
-}
 
 function toSingleResult<Result>(response: AthenaResult<Result>): AthenaResult<MutationSingleResult<Result>> {
   const payload = response.data
@@ -652,49 +496,67 @@ function asAthenaJsonObjectArray(values: unknown[]): AthenaJsonObject[] {
   return values as unknown as AthenaJsonObject[]
 }
 
-function createMutationQuery<Result>(
+function normalizeSelectColumnsInput(columns?: AthenaSelectInput): string | string[] | undefined {
+  if (columns === undefined) {
+    return undefined
+  }
+  if (typeof columns === 'string') {
+    return columns
+  }
+  return [...columns]
+}
+
+function createMutationQuery<
+  Result,
+  Row = MutationResultRow<Result>,
+  TStrict extends boolean = false,
+>(
   executor: (
     columns?: string | string[],
     options?: AthenaGatewayCallOptions,
     callsite?: AthenaQueryTraceCallsite | null,
   ) => Promise<AthenaResult<Result>>,
-  defaultColumns: string | string[] | null = DEFAULT_COLUMNS,
+  defaultColumns: AthenaSelectInput | null = DEFAULT_COLUMNS,
   tracer?: AthenaQueryTracer,
   initialCallsite?: AthenaQueryTraceCallsite | null,
-): MutationQuery<Result> {
-  let selectedColumns: string | string[] | undefined = defaultColumns === null ? undefined : defaultColumns
+): MutationQuery<Result, Row, TStrict> {
+  let selectedColumns: AthenaSelectInput | undefined = defaultColumns === null ? undefined : defaultColumns
   let selectedOptions: AthenaGatewayCallOptions | undefined
   let promise: Promise<AthenaResult<Result>> | null = null
   const callsiteStore = createTraceCallsiteStore(tracer, initialCallsite)
 
   const run = (
-    columns?: string | string[],
+    columns?: AthenaSelectInput,
     options?: AthenaGatewayCallOptions,
     callsite?: AthenaQueryTraceCallsite | null,
   ) => {
     const payloadColumns = columns ?? selectedColumns
     const payloadOptions = options ?? selectedOptions
     if (!promise) {
-      promise = executor(payloadColumns, payloadOptions, callsiteStore.resolve(callsite))
+      promise = executor(
+        normalizeSelectColumnsInput(payloadColumns),
+        payloadOptions,
+        callsiteStore.resolve(callsite),
+      )
     }
     return promise
   }
 
-  const mutationQuery: MutationQuery<Result> = {
-    select(columns = selectedColumns, options) {
+  const mutationQuery: MutationQuery<Result, Row, TStrict> = {
+    select(columns?: AthenaSelectInput, options?: AthenaGatewayCallOptions) {
       selectedColumns = columns
       selectedOptions = options ?? selectedOptions
       return run(columns, options, captureTraceCallsite(tracer))
     },
-    returning(columns = selectedColumns, options) {
+    returning(columns?: AthenaSelectInput, options?: AthenaGatewayCallOptions) {
       return mutationQuery.select(columns, options)
     },
-    single(columns = selectedColumns, options) {
+    single(columns?: AthenaSelectInput, options?: AthenaGatewayCallOptions) {
       selectedColumns = columns
       selectedOptions = options ?? selectedOptions
       return run(columns, options, captureTraceCallsite(tracer)).then(toSingleResult)
     },
-    maybeSingle(columns = selectedColumns, options) {
+    maybeSingle(columns?: AthenaSelectInput, options?: AthenaGatewayCallOptions) {
       return mutationQuery.single(columns, options)
     },
     then(onfulfilled, onrejected) {
@@ -748,51 +610,69 @@ interface FilterChain<Self, Row> {
 }
 
 /** Chain returned by select() - supports filters and single/maybeSingle before execution */
-export interface SelectChain<Row, SelectedRow = Row>
-  extends FilterChain<SelectChain<Row, SelectedRow>, Row>, PromiseLike<AthenaResult<SelectedRow[]>> {
-  single<T = SelectedRow>(
-    columns?: string | string[],
+export interface SelectChain<Row, SelectedRow = Row, TStrict extends boolean = false>
+  extends FilterChain<SelectChain<Row, SelectedRow, TStrict>, Row>, PromiseLike<AthenaResult<SelectedRow[]>> {
+  single<
+    T = SelectedRow,
+    const TColumns extends AthenaSelectInput = string,
+  >(
+    columns?: SelectColumnsFor<Row, TStrict, TColumns>,
     options?: AthenaGatewayCallOptions,
   ): Promise<AthenaResult<T | null>>
-  maybeSingle<T = SelectedRow>(
-    columns?: string | string[],
+  maybeSingle<
+    T = SelectedRow,
+    const TColumns extends AthenaSelectInput = string,
+  >(
+    columns?: SelectColumnsFor<Row, TStrict, TColumns>,
     options?: AthenaGatewayCallOptions,
   ): Promise<AthenaResult<T | null>>
 }
 
 /** Chain returned by update() - supports filters before execution, plus select/returning */
-export interface UpdateChain<Row>
-  extends FilterChain<UpdateChain<Row>, Row>, MutationQuery<Row[]> {}
+export interface UpdateChain<Row, TStrict extends boolean = false>
+  extends FilterChain<UpdateChain<Row, TStrict>, Row>, MutationQuery<Row[], Row, TStrict> {}
 
-interface RpcFilterChain<Self> {
-  eq(column: string, value: AthenaConditionValue): Self
-  neq(column: string, value: AthenaConditionValue): Self
-  gt(column: string, value: AthenaConditionValue): Self
-  gte(column: string, value: AthenaConditionValue): Self
-  lt(column: string, value: AthenaConditionValue): Self
-  lte(column: string, value: AthenaConditionValue): Self
-  like(column: string, value: AthenaConditionValue): Self
-  ilike(column: string, value: AthenaConditionValue): Self
-  is(column: string, value: AthenaConditionValue): Self
-  in(column: string, values: AthenaConditionArrayValue): Self
+interface RpcFilterChain<Self, Row, TStrict extends boolean = false> {
+  eq(column: AthenaTypecheckedColumnKey<Row, TStrict>, value: AthenaConditionValue): Self
+  neq(column: AthenaTypecheckedColumnKey<Row, TStrict>, value: AthenaConditionValue): Self
+  gt(column: AthenaTypecheckedColumnKey<Row, TStrict>, value: AthenaConditionValue): Self
+  gte(column: AthenaTypecheckedColumnKey<Row, TStrict>, value: AthenaConditionValue): Self
+  lt(column: AthenaTypecheckedColumnKey<Row, TStrict>, value: AthenaConditionValue): Self
+  lte(column: AthenaTypecheckedColumnKey<Row, TStrict>, value: AthenaConditionValue): Self
+  like(column: AthenaTypecheckedColumnKey<Row, TStrict>, value: AthenaConditionValue): Self
+  ilike(column: AthenaTypecheckedColumnKey<Row, TStrict>, value: AthenaConditionValue): Self
+  is(column: AthenaTypecheckedColumnKey<Row, TStrict>, value: AthenaConditionValue): Self
+  in(column: AthenaTypecheckedColumnKey<Row, TStrict>, values: AthenaConditionArrayValue): Self
 }
 
 export interface RpcOrderOptions {
   ascending?: boolean
 }
 
-export interface RpcQueryBuilder<Row>
-  extends RpcFilterChain<RpcQueryBuilder<Row>>, PromiseLike<AthenaResult<Row[]>> {
-  select(columns?: string | string[], options?: AthenaRpcCallOptions): Promise<AthenaResult<Row[]>>
-  single<T = Row>(columns?: string | string[], options?: AthenaRpcCallOptions): Promise<AthenaResult<T | null>>
-  maybeSingle<T = Row>(
-    columns?: string | string[],
+export interface RpcQueryBuilder<Row, TStrict extends boolean = false>
+  extends RpcFilterChain<RpcQueryBuilder<Row, TStrict>, Row, TStrict>, PromiseLike<AthenaResult<Row[]>> {
+  select<const TColumns extends AthenaSelectInput = string>(
+    columns?: SelectColumnsFor<Row, TStrict, TColumns>,
+    options?: AthenaRpcCallOptions,
+  ): Promise<AthenaResult<Row[]>>
+  single<
+    T = Row,
+    const TColumns extends AthenaSelectInput = string,
+  >(
+    columns?: SelectColumnsFor<Row, TStrict, TColumns>,
     options?: AthenaRpcCallOptions,
   ): Promise<AthenaResult<T | null>>
-  order(column: string, options?: RpcOrderOptions): RpcQueryBuilder<Row>
-  limit(count: number): RpcQueryBuilder<Row>
-  offset(count: number): RpcQueryBuilder<Row>
-  range(from: number, to: number): RpcQueryBuilder<Row>
+  maybeSingle<
+    T = Row,
+    const TColumns extends AthenaSelectInput = string,
+  >(
+    columns?: SelectColumnsFor<Row, TStrict, TColumns>,
+    options?: AthenaRpcCallOptions,
+  ): Promise<AthenaResult<T | null>>
+  order(column: AthenaTypecheckedColumnKey<Row, TStrict>, options?: RpcOrderOptions): RpcQueryBuilder<Row, TStrict>
+  limit(count: number): RpcQueryBuilder<Row, TStrict>
+  offset(count: number): RpcQueryBuilder<Row, TStrict>
+  range(from: number, to: number): RpcQueryBuilder<Row, TStrict>
 }
 
 export interface AthenaFromOptions {
@@ -804,34 +684,53 @@ export interface TableQueryBuilder<
   Insert = Partial<Row>,
   Update = Partial<Insert>,
   TContext = unknown,
-> extends FilterChain<TableQueryBuilder<Row, Insert, Update, TContext>, Row> {
-  select<T = Row>(columns?: string | string[], options?: AthenaGatewayCallOptions): SelectChain<Row, T>
+  TStrict extends boolean = false,
+> extends FilterChain<TableQueryBuilder<Row, Insert, Update, TContext, TStrict>, Row> {
+  select<
+    T = Row,
+    const TColumns extends AthenaSelectInput = string,
+  >(
+    columns?: SelectColumnsFor<Row, TStrict, TColumns>,
+    options?: AthenaGatewayCallOptions,
+  ): SelectChain<Row, T, TStrict>
   findMany<const TSelect extends AthenaSelectShape>(
     options: AthenaFindManyOptions<Row, TSelect> & {
       select: AthenaValidatedSelectShape<TSelect>
     },
   ): Promise<AthenaResult<Array<AthenaFindManyResult<Row, TSelect, TContext>>>>
-  insert(values: Insert, options?: AthenaGatewayCallOptions): MutationQuery<Row>
-  insert(values: Insert[], options?: AthenaGatewayCallOptions): MutationQuery<Row[]>
+  insert(values: Insert, options?: AthenaGatewayCallOptions): MutationQuery<Row, Row, TStrict>
+  insert(values: Insert[], options?: AthenaGatewayCallOptions): MutationQuery<Row[], Row, TStrict>
   upsert(
     values: Insert,
     options?: AthenaGatewayCallOptions & {
       updateBody?: Update
       onConflict?: string | string[]
     },
-  ): MutationQuery<Row>
+  ): MutationQuery<Row, Row, TStrict>
   upsert(
     values: Insert[],
     options?: AthenaGatewayCallOptions & {
       updateBody?: Update
       onConflict?: string | string[]
     },
-  ): MutationQuery<Row[]>
-  update(values: Update, options?: AthenaGatewayCallOptions): UpdateChain<Row>
-  delete(options?: AthenaGatewayCallOptions & { resourceId?: string }): MutationQuery<Row | null>
-  single<T = Row>(columns?: string | string[], options?: AthenaGatewayCallOptions): Promise<AthenaResult<T | null>>
-  maybeSingle<T = Row>(columns?: string | string[], options?: AthenaGatewayCallOptions): Promise<AthenaResult<T | null>>
-  reset(): TableQueryBuilder<Row, Insert, Update, TContext>
+  ): MutationQuery<Row[], Row, TStrict>
+  update(values: Update, options?: AthenaGatewayCallOptions): UpdateChain<Row, TStrict>
+  delete(options?: AthenaGatewayCallOptions & { resourceId?: string }): MutationQuery<Row | null, Row, TStrict>
+  single<
+    T = Row,
+    const TColumns extends AthenaSelectInput = string,
+  >(
+    columns?: SelectColumnsFor<Row, TStrict, TColumns>,
+    options?: AthenaGatewayCallOptions,
+  ): Promise<AthenaResult<T | null>>
+  maybeSingle<
+    T = Row,
+    const TColumns extends AthenaSelectInput = string,
+  >(
+    columns?: SelectColumnsFor<Row, TStrict, TColumns>,
+    options?: AthenaGatewayCallOptions,
+  ): Promise<AthenaResult<T | null>>
+  reset(): TableQueryBuilder<Row, Insert, Update, TContext, TStrict>
 }
 
 function getResourceId(state: TableBuilderState): string | undefined {
@@ -1482,9 +1381,12 @@ function createFilterMethods<Self, Row>(
   }
 }
 
-function toRpcSelect(columns?: string | string[]) {
+function toRpcSelect(columns?: AthenaSelectInput) {
   if (!columns) return undefined
-  return Array.isArray(columns) ? columns.join(',') : columns
+  if (typeof columns === 'string') {
+    return columns
+  }
+  return columns.join(',')
 }
 
 function createRpcFilterMethods<Self>(
@@ -1543,7 +1445,7 @@ function createRpcFilterMethods<Self>(
   }
 }
 
-function createRpcBuilder<Row>(
+function createRpcBuilder<Row, TStrict extends boolean = false>(
   functionName: string,
   args: AthenaJsonObject | undefined,
   baseOptions: AthenaRpcCallOptions | undefined,
@@ -1551,7 +1453,8 @@ function createRpcBuilder<Row>(
   formatGatewayResult: AthenaResultFormatter,
   tracer?: AthenaQueryTracer,
   initialCallsite?: AthenaQueryTraceCallsite | null,
-): RpcQueryBuilder<Row> {
+  debugAstEnabled = false,
+): RpcQueryBuilder<Row, TStrict> {
   const state: {
     filters: AthenaRpcFilter[]
     limit?: number
@@ -1561,17 +1464,18 @@ function createRpcBuilder<Row>(
     filters: [],
   }
 
-  let selectedColumns: string | string[] | undefined
+  let selectedColumns: AthenaSelectInput | undefined
   let selectedOptions: AthenaRpcCallOptions | undefined
   let promise: Promise<AthenaResult<Row[]>> | null = null
   const callsiteStore = createTraceCallsiteStore(tracer, initialCallsite)
 
   const executeRpc = async <SelectedRow = Row>(
-    columns?: string | string[],
+    columns?: AthenaSelectInput,
     options?: AthenaRpcCallOptions,
     callsite?: AthenaQueryTraceCallsite | null,
   ): Promise<AthenaResult<SelectedRow[]>> => {
     const mergedOptions = mergeOptions(baseOptions, options)
+    const normalizedSelectedColumns = normalizeSelectColumnsInput(columns)
     const payload: AthenaRpcPayload = {
       function: functionName,
       args,
@@ -1584,8 +1488,20 @@ function createRpcBuilder<Row>(
       offset: state.offset,
       order: state.order,
     }
-    const endpoint: AthenaTraceEndpoint = mergedOptions?.get ? `/rpc/${functionName}` : '/gateway/rpc'
+    const endpoint: AthenaQueryTraceEvent['endpoint'] = mergedOptions?.get
+      ? `/rpc/${functionName}`
+      : '/gateway/rpc'
     const sql = buildRpcDebugSql(payload)
+    const debugAst = debugAstEnabled
+      ? buildRpcDebugAst({
+          functionName,
+          args,
+          selectedColumns: normalizedSelectedColumns,
+          state,
+          payload,
+          endpoint,
+        })
+      : undefined
     return executeWithQueryTrace(
       tracer,
       {
@@ -1594,6 +1510,7 @@ function createRpcBuilder<Row>(
         functionName,
         sql,
         payload,
+        ast: debugAst,
         options: mergedOptions,
       },
       async () => {
@@ -1605,7 +1522,7 @@ function createRpcBuilder<Row>(
   }
 
   const run = (
-    columns?: string | string[],
+    columns?: AthenaSelectInput,
     options?: AthenaRpcCallOptions,
     callsite?: AthenaQueryTraceCallsite | null,
   ) => {
@@ -1617,21 +1534,21 @@ function createRpcBuilder<Row>(
     return promise
   }
 
-  const builder = {} as RpcQueryBuilder<Row>
+  const builder = {} as RpcQueryBuilder<Row, TStrict>
   const filterMethods = createRpcFilterMethods(state.filters, builder)
 
   Object.assign(builder, filterMethods, {
-    select(columns = selectedColumns, options?: AthenaRpcCallOptions) {
+    select(columns?: AthenaSelectInput, options?: AthenaRpcCallOptions) {
       selectedColumns = columns
       selectedOptions = options ?? selectedOptions
       return run(columns, options, captureTraceCallsite(tracer))
     },
-    async single<T = Row>(columns?: string | string[], options?: AthenaRpcCallOptions) {
+    async single<T = Row>(columns?: AthenaSelectInput, options?: AthenaRpcCallOptions) {
       const result = await run(columns, options, captureTraceCallsite(tracer))
       return toSingleResult(result) as AthenaResult<T | null>
     },
-    maybeSingle<T = Row>(columns?: string | string[], options?: AthenaRpcCallOptions) {
-      return builder.single<T>(columns, options)
+    maybeSingle<T = Row>(columns?: AthenaSelectInput, options?: AthenaRpcCallOptions) {
+      return builder.single<T, AthenaSelectInput>(columns, options)
     },
     order(column: string, options?: RpcOrderOptions) {
       state.order = { column, ascending: options?.ascending ?? true }
@@ -1672,16 +1589,18 @@ function createTableBuilder<
   Insert = Partial<Row>,
   Update = Partial<Insert>,
   TContext = unknown,
+  TStrict extends boolean = false,
 >(
   tableName: string,
   client: ReturnType<typeof createAthenaGatewayClient>,
   formatGatewayResult: AthenaResultFormatter,
   tracer?: AthenaQueryTracer,
   experimental?: AthenaClientExperimentalOptions,
-): TableQueryBuilder<Row, Insert, Update, TContext> {
+): TableQueryBuilder<Row, Insert, Update, TContext, TStrict> {
   const state: TableBuilderState = {
     conditions: [],
   }
+  const debugAstEnabled = Boolean(experimental?.debugAst)
 
   const addCondition = (
     operator: AthenaConditionOperator,
@@ -1728,28 +1647,43 @@ function createTableBuilder<
     totalPages: state.totalPages,
   })
 
-  const builder = {} as TableQueryBuilder<Row, Insert, Update, TContext>
+  const builder = {} as TableQueryBuilder<Row, Insert, Update, TContext, TStrict>
 
-  const filterMethods = createFilterMethods<TableQueryBuilder<Row, Insert, Update, TContext>, Row>(
+  const filterMethods = createFilterMethods<TableQueryBuilder<Row, Insert, Update, TContext, TStrict>, Row>(
     state,
     addCondition,
     builder,
   )
 
   const runSelect = async <T = Row>(
-    columns: string | string[] = DEFAULT_COLUMNS,
+    columns: AthenaSelectInput = DEFAULT_COLUMNS,
     options?: AthenaGatewayCallOptions,
     executionState: TableBuilderState = snapshotState(),
     callsite?: AthenaQueryTraceCallsite | null,
+    debugAstFactory?: SelectDebugAstFactory,
   ) => {
+    const runtimeColumns = normalizeSelectColumnsInput(columns) ?? DEFAULT_COLUMNS
     const resolvedTableName = resolveTableNameForCall(tableName, options?.schema)
     const plan = createSelectTransportPlan({
       tableName: resolvedTableName,
-      columns,
+      columns: runtimeColumns,
       state: executionState,
       options,
       buildTypedSelectQuery,
     })
+    const debugAst = debugAstEnabled
+      ? (debugAstFactory?.({
+          tableName: resolvedTableName,
+          columns: runtimeColumns,
+          executionState,
+          plan,
+        }) ?? buildSelectDebugAst({
+          tableName: resolvedTableName,
+          columns: runtimeColumns,
+          state: executionState,
+          plan,
+        }))
+      : undefined
 
     if (plan.kind === 'query') {
       return executeExperimentalRead(experimental, () =>
@@ -1761,6 +1695,7 @@ function createTableBuilder<
             table: resolvedTableName,
             sql: plan.query,
             payload: plan.payload,
+            ast: debugAst,
             options,
           },
           async () => {
@@ -1785,6 +1720,7 @@ function createTableBuilder<
           table: resolvedTableName,
           sql,
           payload: plan.payload,
+          ast: debugAst,
           options,
         },
         async () => {
@@ -1797,15 +1733,19 @@ function createTableBuilder<
   }
 
   const createSelectChain = <SelectedRow>(
-    columns: string | string[],
+    columns: AthenaSelectInput,
     options?: AthenaGatewayCallOptions,
     initialCallsite?: AthenaQueryTraceCallsite | null,
-  ): SelectChain<Row, SelectedRow> => {
-    const chain = {} as SelectChain<Row, SelectedRow>
+  ): SelectChain<Row, SelectedRow, TStrict> => {
+    const chain = {} as SelectChain<Row, SelectedRow, TStrict>
     const callsiteStore = createTraceCallsiteStore(tracer, initialCallsite)
-    const filterMethods = createFilterMethods<SelectChain<Row, SelectedRow>, Row>(state, addCondition, chain)
+    const filterMethods = createFilterMethods<SelectChain<Row, SelectedRow, TStrict>, Row>(
+      state,
+      addCondition,
+      chain,
+    )
     Object.assign(chain, filterMethods, {
-      async single<T = SelectedRow>(cols?: string | string[], opts?: AthenaGatewayCallOptions) {
+      async single<T = SelectedRow>(cols?: AthenaSelectInput, opts?: AthenaGatewayCallOptions) {
         const r = await runSelect<T[]>(
           cols ?? columns,
           opts ?? options,
@@ -1814,8 +1754,8 @@ function createTableBuilder<
         )
         return toSingleResult(r)
       },
-      maybeSingle<T = SelectedRow>(cols?: string | string[], opts?: AthenaGatewayCallOptions) {
-        return chain.single<T>(cols, opts)
+      maybeSingle<T = SelectedRow>(cols?: AthenaSelectInput, opts?: AthenaGatewayCallOptions) {
+        return chain.single<T, AthenaSelectInput>(cols, opts)
       },
       then<T1 = AthenaResult<SelectedRow[]>, T2 = never>(
         onfulfilled?: (v: AthenaResult<SelectedRow[]>) => T1 | PromiseLike<T1>,
@@ -1853,7 +1793,7 @@ function createTableBuilder<
       state.totalPages = undefined
       return builder
     },
-    select<T = Row>(columns: string | string[] = DEFAULT_COLUMNS, options?: AthenaGatewayCallOptions) {
+    select<T = Row>(columns: AthenaSelectInput = DEFAULT_COLUMNS, options?: AthenaGatewayCallOptions) {
       return createSelectChain<T>(columns, options, captureTraceCallsite(tracer))
     },
     async findMany<const TSelect extends AthenaSelectShape>(
@@ -1903,6 +1843,16 @@ function createTableBuilder<
           limit: executionState.limit,
           order: executionState.order,
         })
+        const debugAst = debugAstEnabled
+          ? buildFindManyDirectDebugAst({
+              tableName: resolvedTableName,
+              options,
+              compiledColumns: columns,
+              baseState,
+              executionState,
+              payload,
+            })
+          : undefined
         return executeExperimentalRead(experimental, () =>
           executeWithQueryTrace(
             tracer,
@@ -1912,6 +1862,7 @@ function createTableBuilder<
               table: resolvedTableName,
               sql,
               payload,
+              ast: debugAst,
             },
             async () => {
               const response = await client.fetchGateway<Array<AthenaFindManyResult<Row, TSelect, TContext>>>(
@@ -1928,6 +1879,17 @@ function createTableBuilder<
         undefined,
         executionState,
         callsite,
+        debugAstEnabled
+          ? ({ tableName: resolvedTableName, executionState: tracedState, plan }) =>
+              buildFindManyCompiledDebugAst({
+                tableName: resolvedTableName,
+                options,
+                compiledColumns: columns,
+                baseState,
+                executionState: tracedState,
+                plan,
+              })
+          : undefined,
       )
     },
     insert(values: Insert | Insert[], options?: AthenaGatewayCallOptions) {
@@ -1951,6 +1913,7 @@ function createTableBuilder<
             payload.default_to_null = mergedOptions.defaultToNull
           }
           const sql = buildInsertDebugSql(payload)
+          const debugAst = debugAstEnabled ? buildInsertDebugAst(payload) : undefined
           return executeWithQueryTrace(
             tracer,
             {
@@ -1959,6 +1922,7 @@ function createTableBuilder<
               table: resolvedTableName,
               sql,
               payload,
+              ast: debugAst,
               options: mergedOptions,
             },
             async () => {
@@ -1988,6 +1952,7 @@ function createTableBuilder<
           payload.default_to_null = mergedOptions.defaultToNull
         }
         const sql = buildInsertDebugSql(payload)
+        const debugAst = debugAstEnabled ? buildInsertDebugAst(payload) : undefined
         return executeWithQueryTrace(
           tracer,
           {
@@ -1996,6 +1961,7 @@ function createTableBuilder<
             table: resolvedTableName,
             sql,
             payload,
+            ast: debugAst,
             options: mergedOptions,
           },
           async () => {
@@ -2033,6 +1999,7 @@ function createTableBuilder<
             payload.default_to_null = mergedOptions.defaultToNull
           }
           const sql = buildInsertDebugSql(payload)
+          const debugAst = debugAstEnabled ? buildUpsertDebugAst(payload) : undefined
           return executeWithQueryTrace(
             tracer,
             {
@@ -2041,6 +2008,7 @@ function createTableBuilder<
               table: resolvedTableName,
               sql,
               payload,
+              ast: debugAst,
               options: mergedOptions,
             },
             async () => {
@@ -2072,6 +2040,7 @@ function createTableBuilder<
           payload.default_to_null = mergedOptions.defaultToNull
         }
         const sql = buildInsertDebugSql(payload)
+        const debugAst = debugAstEnabled ? buildUpsertDebugAst(payload) : undefined
         return executeWithQueryTrace(
           tracer,
           {
@@ -2080,6 +2049,7 @@ function createTableBuilder<
             table: resolvedTableName,
             sql,
             payload,
+            ast: debugAst,
             options: mergedOptions,
           },
           async () => {
@@ -2098,7 +2068,8 @@ function createTableBuilder<
         selectOptions?: AthenaGatewayCallOptions,
         callsite?: AthenaQueryTraceCallsite | null,
       ) => {
-        const filters = state.conditions.length ? [...state.conditions] : undefined
+        const executionState = snapshotState()
+        const filters = executionState.conditions.length ? [...executionState.conditions] : undefined
         const mergedOptions = mergeOptions(options, selectOptions)
         const resolvedTableName = resolveTableNameForCall(tableName, mergedOptions?.schema)
         const payload: AthenaUpdatePayload = {
@@ -2107,12 +2078,18 @@ function createTableBuilder<
           conditions: filters,
           strip_nulls: mergedOptions?.stripNulls ?? true,
         }
-        if (state.order) payload.sort_by = state.order
-        if (state.currentPage !== undefined) payload.current_page = state.currentPage
-        if (state.pageSize !== undefined) payload.page_size = state.pageSize
-        if (state.totalPages !== undefined) payload.total_pages = state.totalPages
+        if (executionState.order) payload.sort_by = executionState.order
+        if (executionState.currentPage !== undefined) payload.current_page = executionState.currentPage
+        if (executionState.pageSize !== undefined) payload.page_size = executionState.pageSize
+        if (executionState.totalPages !== undefined) payload.total_pages = executionState.totalPages
         if (columns) payload.columns = columns
         const sql = buildUpdateDebugSql(payload)
+        const debugAst = debugAstEnabled
+          ? buildUpdateDebugAst({
+              state: executionState,
+              payload,
+            })
+          : undefined
         return executeWithQueryTrace(
           tracer,
           {
@@ -2121,6 +2098,7 @@ function createTableBuilder<
             table: resolvedTableName,
             sql,
             payload,
+            ast: debugAst,
             options: mergedOptions,
           },
           async () => {
@@ -2148,6 +2126,11 @@ function createTableBuilder<
         selectOptions?: AthenaGatewayCallOptions,
         callsite?: AthenaQueryTraceCallsite | null,
       ) => {
+        const executionState = snapshotState()
+        const debugState: TableBuilderState = {
+          ...executionState,
+          conditions: filters ? filters.map(condition => ({ ...condition })) : [],
+        }
         const mergedOptions = mergeOptions(options, selectOptions)
         const resolvedTableName = resolveTableNameForCall(tableName, mergedOptions?.schema)
         const payload: AthenaDeletePayload = {
@@ -2155,12 +2138,18 @@ function createTableBuilder<
           resource_id: resourceId,
           conditions: filters,
         }
-        if (state.order) payload.sort_by = state.order
-        if (state.currentPage !== undefined) payload.current_page = state.currentPage
-        if (state.pageSize !== undefined) payload.page_size = state.pageSize
-        if (state.totalPages !== undefined) payload.total_pages = state.totalPages
+        if (executionState.order) payload.sort_by = executionState.order
+        if (executionState.currentPage !== undefined) payload.current_page = executionState.currentPage
+        if (executionState.pageSize !== undefined) payload.page_size = executionState.pageSize
+        if (executionState.totalPages !== undefined) payload.total_pages = executionState.totalPages
         if (columns) payload.columns = columns
         const sql = buildDeleteDebugSql(payload)
+        const debugAst = debugAstEnabled
+          ? buildDeleteDebugAst({
+              state: debugState,
+              payload,
+            })
+          : undefined
         return executeWithQueryTrace(
           tracer,
           {
@@ -2169,6 +2158,7 @@ function createTableBuilder<
             table: resolvedTableName,
             sql,
             payload,
+            ast: debugAst,
             options: mergedOptions,
           },
           async () => {
@@ -2180,7 +2170,7 @@ function createTableBuilder<
       }
       return createMutationQuery<Row | null>(executeDelete, null, tracer, mutationCallsite)
     },
-    async single<T = Row>(columns?: string | string[], options?: AthenaGatewayCallOptions) {
+    async single<T = Row>(columns?: AthenaSelectInput, options?: AthenaGatewayCallOptions) {
       const response = await runSelect<T[]>(
         columns ?? DEFAULT_COLUMNS,
         options,
@@ -2189,8 +2179,8 @@ function createTableBuilder<
       )
       return toSingleResult(response)
     },
-    async maybeSingle<T = Row>(columns?: string | string[], options?: AthenaGatewayCallOptions) {
-      return builder.single<T>(columns, options)
+    async maybeSingle<T = Row>(columns?: AthenaSelectInput, options?: AthenaGatewayCallOptions) {
+      return builder.single<T, AthenaSelectInput>(columns, options)
     },
   })
 
@@ -2203,6 +2193,7 @@ function createQueryBuilder(
   experimental?: AthenaClientExperimentalOptions,
   tracer?: AthenaQueryTracer,
 ) {
+  const debugAstEnabled = Boolean(experimental?.debugAst)
   return async function query<Row = unknown>(
     query: string,
     options?: AthenaGatewayCallOptions,
@@ -2221,6 +2212,7 @@ function createQueryBuilder(
           endpoint: '/gateway/query',
           sql: normalizedQuery,
           payload,
+          ast: debugAstEnabled ? buildRawQueryDebugAst(normalizedQuery) : undefined,
           options,
         },
         async () => {
@@ -2233,27 +2225,30 @@ function createQueryBuilder(
   }
 }
 
-export interface AthenaSdkClient {
+export interface AthenaSdkClient<TStrict extends boolean = false> {
+  from<TModel extends AthenaModelTarget>(
+    model: TModel,
+  ): TableQueryBuilder<RowOf<TModel>, InsertOf<TModel>, UpdateOf<TModel>, unknown, TStrict>
   from<
     Row = AthenaRowShape,
     Insert = Partial<Row>,
     Update = Partial<Insert>,
-  >(table: string, options?: AthenaFromOptions): TableQueryBuilder<Row, Insert, Update>
-  db: AthenaDbModule
+  >(table: string, options?: AthenaFromOptions): TableQueryBuilder<Row, Insert, Update, unknown, TStrict>
+  db: AthenaDbModule<TStrict>
   rpc<Row = unknown, Args extends AthenaJsonObject = AthenaJsonObject>(
     fn: string,
     args?: Args,
     options?: AthenaRpcCallOptions,
-  ): RpcQueryBuilder<Row>
+  ): RpcQueryBuilder<Row, TStrict>
   query<Row = unknown>(query: string, options?: AthenaGatewayCallOptions): Promise<AthenaResult<Row[]>>
   verifyConnection(options?: AthenaGatewayConnectionOptions): Promise<AthenaGatewayConnectionResult>
 }
 
-export interface AthenaSdkClientWithAuth extends AthenaSdkClient {
+export interface AthenaSdkClientWithAuth<TStrict extends boolean = false> extends AthenaSdkClient<TStrict> {
   auth: AthenaAuthBindings
 }
 
-export interface AthenaSdkClientWithStorage extends AthenaSdkClientWithAuth {
+export interface AthenaSdkClientWithStorage<TStrict extends boolean = false> extends AthenaSdkClientWithAuth<TStrict> {
   storage: AthenaStorageModule
 }
 
@@ -2268,6 +2263,19 @@ export interface AthenaCreateClientOptionsWithStorage extends AthenaCreateClient
   }
 }
 
+export interface AthenaCreateClientOptionsWithTypecheckedColumns extends AthenaCreateClientOptions {
+  experimental: AthenaClientExperimentalOptions & {
+    typecheckColumns: true
+  }
+}
+
+export interface AthenaCreateClientOptionsWithStorageAndTypecheckedColumns extends AthenaCreateClientOptions {
+  experimental: AthenaClientExperimentalOptions & {
+    athenaStorageBackend: true
+    typecheckColumns: true
+  }
+}
+
 /** Client config for builder */
 export interface AthenaClientConfig {
   baseUrl: string
@@ -2279,7 +2287,9 @@ export interface AthenaClientConfig {
   experimental?: AthenaClientExperimentalOptions
 }
 
-function createClientFromConfig(config: AthenaClientConfig): AthenaSdkClientWithAuth {
+function createClientFromConfig<TStrict extends boolean = false>(
+  config: AthenaClientConfig,
+): AthenaSdkClientWithAuth<TStrict> {
   const gatewayHeaders: Record<string, string> = {
     ...(config.headers ?? {}),
   }
@@ -2301,22 +2311,50 @@ function createClientFromConfig(config: AthenaClientConfig): AthenaSdkClientWith
   const formatGatewayResult = createResultFormatter(config.experimental)
   const queryTracer = createQueryTracer(config.experimental)
   const auth = createAuthClient(config.auth)
-  const from: AthenaSdkClient['from'] = <
+  function from<TModel extends AthenaModelTarget>(
+    model: TModel,
+  ): TableQueryBuilder<RowOf<TModel>, InsertOf<TModel>, UpdateOf<TModel>, unknown, TStrict>
+  function from<
     Row = AthenaRowShape,
     Insert = Partial<Row>,
     Update = Partial<Insert>,
   >(
     table: string,
     options?: AthenaFromOptions,
-  ) =>
-    createTableBuilder<Row, Insert, Update>(
-      resolveTableNameForCall(table, options?.schema),
+  ): TableQueryBuilder<Row, Insert, Update, unknown, TStrict>
+  function from<
+    Row = AthenaRowShape,
+    Insert = Partial<Row>,
+    Update = Partial<Insert>,
+  >(
+    tableOrModel: string | AthenaModelTarget<Row, Insert, Update>,
+    options?: AthenaFromOptions,
+  ): TableQueryBuilder<Row, Insert, Update, unknown, TStrict> {
+    if (isAthenaModelTarget(tableOrModel)) {
+      if (options?.schema !== undefined) {
+        throw new Error(
+          'from(model) does not accept a schema override because the model already defines its target.',
+        )
+      }
+      return createTableBuilder<Row, Insert, Update, unknown, TStrict>(
+        resolveAthenaModelTargetTableName(tableOrModel),
+        gateway,
+        formatGatewayResult,
+        queryTracer,
+        config.experimental,
+      )
+    }
+
+    const resolvedTableName = resolveTableNameForCall(tableOrModel as string, options?.schema)
+    return createTableBuilder<Row, Insert, Update, unknown, TStrict>(
+      resolvedTableName,
       gateway,
       formatGatewayResult,
       queryTracer,
       config.experimental,
     )
-  const rpc: AthenaSdkClient['rpc'] = <Row = unknown, Args extends AthenaJsonObject = AthenaJsonObject>(
+  }
+  const rpc: AthenaSdkClient<TStrict>['rpc'] = <Row = unknown, Args extends AthenaJsonObject = AthenaJsonObject>(
     fn: string,
     args?: Args,
     options?: AthenaRpcCallOptions,
@@ -2325,7 +2363,7 @@ function createClientFromConfig(config: AthenaClientConfig): AthenaSdkClientWith
     if (!normalizedFn) {
       throw new Error('rpc requires a function name')
     }
-    return createRpcBuilder<Row>(
+    return createRpcBuilder<Row, TStrict>(
       normalizedFn,
       args as AthenaJsonObject | undefined,
       options,
@@ -2333,12 +2371,18 @@ function createClientFromConfig(config: AthenaClientConfig): AthenaSdkClientWith
       formatGatewayResult,
       queryTracer,
       captureTraceCallsite(queryTracer),
+      Boolean(config.experimental?.debugAst),
     )
   }
-  const query = createQueryBuilder(gateway, formatGatewayResult, config.experimental, queryTracer) as AthenaSdkClient['query']
+  const query = createQueryBuilder(
+    gateway,
+    formatGatewayResult,
+    config.experimental,
+    queryTracer,
+  ) as AthenaSdkClient<TStrict>['query']
   const db = createDbModule({ from, rpc, query })
 
-  const sdkClient: AthenaSdkClientWithAuth = {
+  const sdkClient: AthenaSdkClientWithAuth<TStrict> = {
     from,
     db,
     rpc,
@@ -2348,7 +2392,7 @@ function createClientFromConfig(config: AthenaClientConfig): AthenaSdkClientWith
   }
 
   if (config.experimental?.athenaStorageBackend) {
-    const storageClient: AthenaSdkClientWithStorage = {
+    const storageClient: AthenaSdkClientWithStorage<TStrict> = {
       ...sdkClient,
       storage: createStorageModule(gateway, config.experimental.storage),
     }
@@ -2358,177 +2402,51 @@ function createClientFromConfig(config: AthenaClientConfig): AthenaSdkClientWith
   return sdkClient
 }
 
-export interface AthenaClientBuilder<StorageEnabled extends boolean = false> {
+export interface AthenaClientBuilder<
+  StorageEnabled extends boolean = false,
+  TStrict extends boolean = false,
+> {
   /** Set the gateway base URL. */
-  url(url: string): AthenaClientBuilder<StorageEnabled>
+  url(url: string): AthenaClientBuilder<StorageEnabled, TStrict>
   /** Set the API key used for all requests. */
-  key(apiKey: string): AthenaClientBuilder<StorageEnabled>
+  key(apiKey: string): AthenaClientBuilder<StorageEnabled, TStrict>
   /** Set the default backend routing strategy. */
-  backend(backend: BackendConfig | BackendType): AthenaClientBuilder<StorageEnabled>
+  backend(backend: BackendConfig | BackendType): AthenaClientBuilder<StorageEnabled, TStrict>
   /** Set the default Athena client routing key. */
-  client(clientName: string): AthenaClientBuilder<StorageEnabled>
+  client(clientName: string): AthenaClientBuilder<StorageEnabled, TStrict>
   /** Attach static headers to every request. */
-  headers(headers: Record<string, string>): AthenaClientBuilder<StorageEnabled>
+  headers(headers: Record<string, string>): AthenaClientBuilder<StorageEnabled, TStrict>
   /** Configure Athena Auth client behavior for `client.auth.*` methods. */
-  auth(config: AthenaAuthClientConfig): AthenaClientBuilder<StorageEnabled>
-  /** Configure experimental client options and narrow the built client when storage is enabled. */
-  experimental(options: AthenaClientExperimentalOptions & { athenaStorageBackend: true }): AthenaClientBuilder<true>
-  experimental(options: AthenaClientExperimentalOptions): AthenaClientBuilder<StorageEnabled>
+  auth(config: AthenaAuthClientConfig): AthenaClientBuilder<StorageEnabled, TStrict>
+  /** Configure experimental client options and narrow the built client when storage or strict column checks are enabled. */
+  experimental(
+    options: AthenaClientExperimentalOptions & { athenaStorageBackend: true; typecheckColumns: true },
+  ): AthenaClientBuilder<true, true>
+  experimental(
+    options: AthenaClientExperimentalOptions & { athenaStorageBackend: true },
+  ): AthenaClientBuilder<true, TStrict>
+  experimental(
+    options: AthenaClientExperimentalOptions & { typecheckColumns: true },
+  ): AthenaClientBuilder<StorageEnabled, true>
+  experimental(options: AthenaClientExperimentalOptions): AthenaClientBuilder<StorageEnabled, TStrict>
   /** Apply createClient options and narrow the built client when storage is enabled. */
-  options(options: AthenaCreateClientOptionsWithStorage): AthenaClientBuilder<true>
-  options(options: AthenaCreateClientOptions): AthenaClientBuilder<StorageEnabled>
+  options(options: AthenaCreateClientOptionsWithStorageAndTypecheckedColumns): AthenaClientBuilder<true, true>
+  options(options: AthenaCreateClientOptionsWithStorage): AthenaClientBuilder<true, TStrict>
+  options(options: AthenaCreateClientOptionsWithTypecheckedColumns): AthenaClientBuilder<StorageEnabled, true>
+  options(options: AthenaCreateClientOptions): AthenaClientBuilder<StorageEnabled, TStrict>
   /** Build the immutable Athena SDK client. */
-  build(): StorageEnabled extends true ? AthenaSdkClientWithStorage : AthenaSdkClientWithAuth
-}
-
-const DEFAULT_BACKEND: BackendConfig = { type: 'athena' }
-
-function toBackendConfig(b: BackendConfig | BackendType | undefined): BackendConfig {
-  if (!b) return DEFAULT_BACKEND
-  return typeof b === 'string' ? { type: b } : b
-}
-
-function mergeAuthClientConfig(
-  current: AthenaAuthClientConfig | undefined,
-  next: AthenaAuthClientConfig,
-): AthenaAuthClientConfig {
-  const merged: AthenaAuthClientConfig = {
-    ...(current ?? {}),
-    ...next,
-  }
-  if (current?.headers || next.headers) {
-    merged.headers = {
-      ...(current?.headers ?? {}),
-      ...(next.headers ?? {}),
-    }
-  }
-  return merged
-}
-
-function mergeExperimentalOptions(
-  current: AthenaClientExperimentalOptions | undefined,
-  next: AthenaClientExperimentalOptions,
-): AthenaClientExperimentalOptions {
-  const merged: AthenaClientExperimentalOptions = {
-    ...(current ?? {}),
-    ...next,
-  }
-  if (
-    current?.traceQueries &&
-    typeof current.traceQueries === 'object' &&
-    next.traceQueries &&
-    typeof next.traceQueries === 'object'
-  ) {
-    merged.traceQueries = {
-      ...current.traceQueries,
-      ...next.traceQueries,
-    }
-  }
-  if (current?.storage || next.storage) {
-    merged.storage = {
-      ...(current?.storage ?? {}),
-      ...(next.storage ?? {}),
-    }
-  }
-  return merged
-}
-
-class AthenaClientBuilderImpl implements AthenaClientBuilder<false> {
-  private baseUrl?: string
-  private apiKey?: string
-  private backendConfig: BackendConfig = DEFAULT_BACKEND
-  private clientName?: string
-  private defaultHeaders?: Record<string, string>
-  private authConfig?: AthenaAuthClientConfig
-  private experimentalOptions?: AthenaClientExperimentalOptions
-
-  url(url: string): AthenaClientBuilder<false> {
-    this.baseUrl = url
-    return this
-  }
-
-  key(apiKey: string): AthenaClientBuilder<false> {
-    this.apiKey = apiKey
-    return this
-  }
-
-  backend(backend: BackendConfig | BackendType): AthenaClientBuilder<false> {
-    this.backendConfig = toBackendConfig(backend)
-    return this
-  }
-
-  client(clientName: string): AthenaClientBuilder<false> {
-    this.clientName = clientName
-    return this
-  }
-
-  headers(headers: Record<string, string>): AthenaClientBuilder<false> {
-    this.defaultHeaders = headers
-    return this
-  }
-
-  auth(config: AthenaAuthClientConfig): AthenaClientBuilder<false> {
-    this.authConfig = mergeAuthClientConfig(this.authConfig, config)
-    return this
-  }
-
-  experimental(options: AthenaClientExperimentalOptions & { athenaStorageBackend: true }): AthenaClientBuilder<true>
-  experimental(options: AthenaClientExperimentalOptions): AthenaClientBuilder<false>
-  experimental(options: AthenaClientExperimentalOptions): AthenaClientBuilder<false> | AthenaClientBuilder<true> {
-    this.experimentalOptions = mergeExperimentalOptions(this.experimentalOptions, options)
-    return options.athenaStorageBackend ? this as unknown as AthenaClientBuilder<true> : this
-  }
-
-  options(options: AthenaCreateClientOptionsWithStorage): AthenaClientBuilder<true>
-  options(options: AthenaCreateClientOptions): AthenaClientBuilder<false>
-  options(options: AthenaCreateClientOptions): AthenaClientBuilder<false> | AthenaClientBuilder<true> {
-    if (options.client !== undefined) {
-      this.clientName = options.client
-    }
-    if (options.backend !== undefined) {
-      this.backendConfig = toBackendConfig(options.backend)
-    }
-    if (options.headers !== undefined) {
-      this.defaultHeaders = {
-        ...(this.defaultHeaders ?? {}),
-        ...options.headers,
-      }
-    }
-    if (options.auth !== undefined) {
-      this.authConfig = mergeAuthClientConfig(this.authConfig, options.auth)
-    }
-    if (options.experimental !== undefined) {
-      this.experimentalOptions = mergeExperimentalOptions(this.experimentalOptions, options.experimental)
-    }
-    return options.experimental?.athenaStorageBackend ? this as unknown as AthenaClientBuilder<true> : this
-  }
-
-  build(): AthenaSdkClientWithAuth {
-    if (!this.baseUrl || !this.apiKey) {
-      throw new Error('AthenaClient requires url and key; call .url() and .key() before .build()')
-    }
-
-    return createClientFromConfig({
-      baseUrl: this.baseUrl,
-      apiKey: this.apiKey,
-      client: this.clientName,
-      backend: this.backendConfig,
-      headers: this.defaultHeaders,
-      auth: this.authConfig,
-      experimental: this.experimentalOptions,
-    })
-  }
+  build(): StorageEnabled extends true ? AthenaSdkClientWithStorage<TStrict> : AthenaSdkClientWithAuth<TStrict>
 }
 
 /** Canonical Athena client factory with builder-based configuration. */
 export class AthenaClient {
   /** Create a fluent builder for a strongly-typed Athena SDK client. */
-  static builder(): AthenaClientBuilder<false> {
-    return new AthenaClientBuilderImpl()
+  static builder(): AthenaClientBuilder<false, false> {
+    return createAthenaClientBuilder(config => createClientFromConfig(config))
   }
 
   /** Build a client from process environment variables. */
-  static fromEnvironment(): AthenaSdkClientWithAuth {
+  static fromEnvironment(): AthenaSdkClientWithAuth<false> {
     const url =
       process.env.ATHENA_URL ??
       process.env.ATHENA_GATEWAY_URL
@@ -2553,18 +2471,28 @@ export class AthenaClient {
 export function createClient(
   url: string,
   apiKey: string,
+  options: AthenaCreateClientOptionsWithStorageAndTypecheckedColumns,
+): AthenaSdkClientWithStorage<true>
+export function createClient(
+  url: string,
+  apiKey: string,
   options: AthenaCreateClientOptionsWithStorage,
-): AthenaSdkClientWithStorage
+): AthenaSdkClientWithStorage<false>
+export function createClient(
+  url: string,
+  apiKey: string,
+  options: AthenaCreateClientOptionsWithTypecheckedColumns,
+): AthenaSdkClientWithAuth<true>
 export function createClient(
   url: string,
   apiKey: string,
   options?: AthenaCreateClientOptions,
-): AthenaSdkClientWithAuth
+): AthenaSdkClientWithAuth<false>
 export function createClient(
   url: string,
   apiKey: string,
   options?: AthenaCreateClientOptions,
-): AthenaSdkClientWithAuth {
+): AthenaSdkClientWithAuth<false> {
   return createClientFromConfig({
     baseUrl: url,
     apiKey,

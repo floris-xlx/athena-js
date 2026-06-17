@@ -84,10 +84,12 @@ function createClient(
     auth?: AthenaAuthClientConfig
     experimental?: {
       athenaStorageBackend?: boolean
+      debugAst?: boolean
       enableErrorNormalization?: boolean
       findManyAst?: boolean
       retryReads?: boolean
       traceQueries?: boolean | AthenaQueryTraceOptions
+      typecheckColumns?: boolean
       storage?: AthenaStorageClientConfig
     }
   },
@@ -97,9 +99,11 @@ function createClient(
 `experimental.athenaStorageBackend` exposes the experimental `client.storage.*` bindings. Default clients do not include `.storage`; `createClient(..., { experimental: { athenaStorageBackend: true } })`, `AthenaClient.builder().experimental(...)`, and `AthenaClient.builder().options(...)` narrow the returned client type to `AthenaSdkClientWithStorage`.
 `experimental.storage.onError` registers a client-level observer for storage request failures. It receives the same `AthenaStorageError` instance that will be thrown, and observer failures do not mask the original request error.
 `experimental.enableErrorNormalization` is deprecated and retained as a no-op compatibility flag because failed `AthenaResult` values now expose structured normalized `error` objects by default.
+`experimental.debugAst` builds a normalized runtime AST for each executed operation. Successful results expose it through `getAthenaDebugAst(...)`, and traced operations include it on `AthenaQueryTraceEvent.ast`.
 `experimental.findManyAst` opt-ins clean `findMany(...)` calls to use direct AST bodies on `/gateway/fetch` when the request is lossless there; shorthand `where` values are normalized, UUID-like equality filters still fall back to the legacy query path, and nested relation select strings stay off SQL query fallback.
 `experimental.retryReads` enables fixed-policy retries for retryable read failures on `select`, `findMany(...)`, and `query(...)`. It performs two additional attempts internally and does not retry writes.
 `experimental.traceQueries` emits detailed query execution diagnostics for every runtime call.
+`experimental.typecheckColumns` is type-only. When the row keys are known from `from<Table>()`, `from(model)`, `fromModel(...)`, `db.from<Row>(...)`, `db.select<Row>(table).single(...)`, or typed RPC result generics, the SDK validates simple string selects, array literals, and RPC filter/order column names at compile time. Typed `db.select<Row>(table, columns)` is intentionally not supported; use `db.from<Row>(table).select(columns)` when you want inline typed column selection.
 For deferred builders, trace callsites are captured from the public SDK seam that declared or finalized the operation and are memoized through the eventual execution, so traces stay anchored to user code across local and CI stack differences.
 
 ### `AthenaQueryTraceOptions`
@@ -129,6 +133,7 @@ interface AthenaQueryTraceEvent {
   functionName?: string
   sql: string
   payload: unknown
+  ast?: AthenaQueryDebugAst
   options?: AthenaGatewayCallOptions | AthenaRpcCallOptions
   callsite: AthenaQueryTraceCallsite | null
   outcome?: {
@@ -384,6 +389,9 @@ type BackendType = "athena" | "postgrest" | "postgresql" | "scylladb"
 
 ```ts
 interface AthenaSdkClient {
+  from<TModel extends AthenaModelTarget>(
+    model: TModel,
+  ): TableQueryBuilder<RowOf<TModel>, InsertOf<TModel>, UpdateOf<TModel>>
   from<Row = Record<string, AthenaJsonValue | undefined>, Insert = Partial<Row>, Update = Partial<Insert>>(
     table: string,
     options?: AthenaFromOptions,
@@ -415,16 +423,23 @@ interface AthenaFromOptions {
 }
 
 interface AthenaDbModule {
+  from<TModel extends AthenaModelTarget>(
+    model: TModel,
+  ): TableQueryBuilder<RowOf<TModel>, InsertOf<TModel>, UpdateOf<TModel>>
   from<Row = Record<string, AthenaJsonValue | undefined>, Insert = Partial<Row>, Update = Partial<Insert>>(
     table: string,
     options?: AthenaFromOptions,
   ): TableQueryBuilder<Row, Insert, Update>
 
-  select<Row = Record<string, AthenaJsonValue | undefined>, Insert = Partial<Row>, Update = Partial<Insert>, SelectedRow = Row>(
+  select<Row = Record<string, AthenaJsonValue | undefined>>(
     table: string,
-    columns?: string | string[],
     options?: AthenaGatewayCallOptions,
-  ): SelectChain<Row, SelectedRow>
+  ): SelectChain<Row, Row>
+  select(
+    table: string,
+    columns: string | string[],
+    options?: AthenaGatewayCallOptions,
+  ): SelectChain<Record<string, AthenaJsonValue | undefined>, Record<string, AthenaJsonValue | undefined>>
 
   insert<Row = Record<string, AthenaJsonValue | undefined>, Insert = Partial<Row>, Update = Partial<Insert>>(
     table: string,
@@ -529,6 +544,16 @@ interface AthenaStorageFileModule {
   delete(fileIds: readonly string[], options?: AthenaStorageCallOptions): Promise<StorageFileMutationResponse[]>
 }
 ```
+
+For typed inline column selection on the DB helper surface, prefer `athena.db.from<Row>(table).select("id, email")`.
+
+### `getAthenaDebugAst(value)`
+
+```ts
+function getAthenaDebugAst(value: unknown): AthenaQueryDebugAst | null
+```
+
+Returns the normalized debug AST previously attached to a successful result or traced/thrown error when `experimental.debugAst` is enabled.
 
 ```ts
 type AthenaStorageErrorCode =
@@ -1171,8 +1196,8 @@ Config root type:
 
 ```ts
 interface AthenaGeneratorConfig {
-  provider: GeneratorProviderConfig
-  output: GeneratorOutputConfig
+  provider: GeneratorProviderInputConfig
+  output?: GeneratorOutputConfig
   naming?: Partial<GeneratorNamingConfig>
   features?: Partial<GeneratorFeatureFlags>
   experimental?: Partial<GeneratorExperimentalFlags>
@@ -1180,6 +1205,7 @@ interface AthenaGeneratorConfig {
 ```
 
 `runSchemaGenerator(...)` returns snapshot + generated files + written files (unless dry-run).
+`loadGeneratorConfig(...)` now also supports env-only fallback when no `athena.config.*` file exists.
 
 ## React integration (`@xylex-group/athena/react`)
 
@@ -1236,7 +1262,7 @@ Use these after large API-level updates or generated contract changes.
 
 ### Defaults recap
 
-- `provider` has no runtime default and must be configured.
+- `provider` can be satisfied either by a config file or by env-only fallback keys.
 - output targets:
   - `model`: `athena/models/{schema_kebab}/{model_kebab}.ts`
   - `schema`: `athena/schemas/{schema_kebab}.ts`
@@ -1271,6 +1297,16 @@ Generator config discovery checks in order:
 - `athena-js generate`
 - `athena-js generate --dry-run`
 - `athena-js generate --config ./path/to/config`
+
+Env-only examples:
+
+```bash
+DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/app_db athena-js generate --dry-run
+```
+
+```bash
+ATHENA_URL=https://athena-db.com ATHENA_API_KEY=secret ATHENA_GENERATOR_DB=app_db athena-js generate --dry-run
+```
 
 If you need concrete examples and troubleshooting scenarios, use the full
 [`generator-config.md`](generator-config.md) page.

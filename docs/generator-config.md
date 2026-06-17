@@ -2,6 +2,8 @@
 
 This page documents how to generate typed schema contracts from PostgreSQL and where the generated files go.
 
+If you want the fastest copy-paste path first, start with [`generator-quickstart.md`](generator-quickstart.md).
+
 For this to work end-to-end, three things must line up:
 
 1. discoverable config file
@@ -39,7 +41,14 @@ For the full command matrix and troubleshooting, see
 - `.athena.config.ts`
 - `.athena.config.js`
 
-When missing, CLI throws:
+If no config file exists, the generator now falls back to environment defaults:
+
+- direct mode when `DATABASE_URL` / `PG_URL` / `POSTGRES_URL` is present
+- gateway mode when `ATHENA_URL` and `ATHENA_API_KEY` are present
+- default output targets under `athena/*`
+- default schema selection of `public`
+
+When neither a config file nor a usable env-only provider can be found, CLI throws:
 
 - `No generator config found in <cwd>. Expected one of: ...`
 
@@ -49,8 +58,8 @@ Use `--config` with a relative or absolute path to avoid this in monorepos.
 
 ```ts
 export interface AthenaGeneratorConfig {
-  provider: GeneratorProviderConfig
-  output: GeneratorOutputConfig
+  provider: GeneratorProviderInputConfig
+  output?: GeneratorOutputConfig
   naming?: Partial<GeneratorNamingConfig>
   features?: Partial<GeneratorFeatureFlags>
   experimental?: Partial<GeneratorExperimentalFlags>
@@ -59,11 +68,45 @@ export interface AthenaGeneratorConfig {
 
 All nested sections are validated by normal TypeScript shape and then normalized with defaults.
 
+That means:
+
+- `output` can be omitted entirely
+- direct-mode configs can omit `connectionString` when env fallback keys are already present
+- gateway-mode configs can omit `gatewayUrl` / `apiKey` / `database` when the corresponding env fallback keys are already present
+
 ### `defineGeneratorConfig` helper
 
 Use this helper to keep autocompletion and exactness in config files.
 For env-backed values, pair it with `generatorEnv(...)` so config files stay typed
 without manual `process.env`, non-null assertions, string splits, or boolean parsing.
+
+Smallest direct-mode config:
+
+```ts
+import { defineGeneratorConfig } from "@xylex-group/athena";
+
+export default defineGeneratorConfig({
+  provider: {
+    kind: "postgres",
+    mode: "direct",
+  },
+});
+```
+
+Smallest gateway-mode config:
+
+```ts
+import { defineGeneratorConfig } from "@xylex-group/athena";
+
+export default defineGeneratorConfig({
+  provider: {
+    kind: "postgres",
+    mode: "gateway",
+  },
+});
+```
+
+Both examples rely on the documented env fallback keys below.
 
 ```ts
 import { defineGeneratorConfig, generatorEnv } from "@xylex-group/athena";
@@ -79,6 +122,11 @@ export default defineGeneratorConfig({
     }),
   },
   output: {
+    format: generatorEnv.oneOf(
+      "ATHENA_GENERATOR_OUTPUT_FORMAT",
+      ["define-model", "table-builder"] as const,
+      { default: "define-model" },
+    ),
     targets: {
       model: generatorEnv("ATHENA_GENERATOR_MODEL_TARGET", {
         default: "athena/models/{schema_kebab}/{model_kebab}.ts",
@@ -164,6 +212,11 @@ export default defineGeneratorConfig({
     }),
   },
   output: {
+    format: generatorEnv.oneOf(
+      "ATHENA_GENERATOR_OUTPUT_FORMAT",
+      ["define-model", "table-builder"] as const,
+      { default: "define-model" },
+    ),
     targets: {
       model: generatorEnv("ATHENA_GENERATOR_MODEL_TARGET", {
         default: "athena/models/{schema_kebab}/{model_kebab}.ts",
@@ -268,8 +321,9 @@ Current behavior:
 
 ```ts
 interface GeneratorOutputConfig {
-  targets: GeneratorOutputTargets;
-  placeholderMap: Record<string, string>;
+  format?: "define-model" | "table-builder";
+  targets?: Partial<GeneratorOutputTargets>;
+  placeholderMap?: Record<string, string>;
 }
 
 interface GeneratorOutputTargets {
@@ -282,6 +336,7 @@ interface GeneratorOutputTargets {
 
 ### Defaults
 
+- `format`: `"define-model"`
 - `model`: `athena/models/{schema_kebab}/{model_kebab}.ts`
 - `schema`: `athena/schemas/{schema_kebab}.ts`
 - `database`: `athena/relations.ts`
@@ -289,6 +344,32 @@ interface GeneratorOutputTargets {
 
 The defaults include the schema name in model and schema paths so `public.users`
 and `athena.users` can be generated in the same run without path collisions.
+
+### `output.format`
+
+Use `output.format` to choose the model artifact style:
+
+- `"define-model"`: emits legacy `defineModel<...>` files
+- `"table-builder"`: emits Zero-style `table(...).columns(...).primaryKey(...)` files with exported Zod schemas
+
+Example:
+
+```ts
+output: {
+  format: "table-builder",
+  targets: {
+    model: "src/generated/{database_kebab}/{schema_kebab}/{model_kebab}.ts",
+    schema: "src/generated/{database_kebab}/{schema_kebab}/index.ts",
+    database: "src/generated/{database_kebab}/index.ts",
+    registry: "src/generated/index.ts",
+  },
+}
+```
+
+Regardless of output format, the generated registry file now exports
+`__athena_schema_meta` with internal metadata such as `schemaVersion`,
+`generatedAt`, `database`, and `outputFormat`. This is intended for tooling and
+debugging rather than normal application code.
 
 ### Schema selection
 

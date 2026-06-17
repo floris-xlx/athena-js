@@ -14,6 +14,15 @@ import type {
   TableQueryBuilder,
   UpdateChain,
 } from '../client.ts'
+import type {
+  AthenaModelTarget,
+  InsertOf,
+  RowOf,
+  UpdateOf,
+} from '../schema/types.ts'
+import type {
+  AthenaSelectInput,
+} from '../select-column-types.ts'
 
 type AthenaRowShape = Record<string, AthenaJsonValue | undefined>
 
@@ -22,30 +31,36 @@ type AthenaUpsertOptions<Update> = AthenaGatewayCallOptions & {
   onConflict?: string | string[]
 }
 
-export interface AthenaDbModule {
+export interface AthenaDbModule<TStrict extends boolean = false> {
+  from<TModel extends AthenaModelTarget>(
+    model: TModel,
+  ): TableQueryBuilder<RowOf<TModel>, InsertOf<TModel>, UpdateOf<TModel>, unknown, TStrict>
   from<
     Row = AthenaRowShape,
     Insert = Partial<Row>,
     Update = Partial<Insert>,
-  >(table: string, options?: AthenaFromOptions): TableQueryBuilder<Row, Insert, Update>
+  >(table: string, options?: AthenaFromOptions): TableQueryBuilder<Row, Insert, Update, unknown, TStrict>
 
   select<
     Row = AthenaRowShape,
-    SelectedRow = Row,
   >(
     table: string,
-    columns?: string | string[],
     options?: AthenaGatewayCallOptions,
-  ): SelectChain<Row, SelectedRow>
+  ): SelectChain<Row, Row, TStrict>
+  select(
+    table: string,
+    columns: AthenaSelectInput,
+    options?: AthenaGatewayCallOptions,
+  ): SelectChain<AthenaRowShape, AthenaRowShape, TStrict>
 
   insert<
     Row = AthenaRowShape,
     Insert = Partial<Row>,
-  >(table: string, values: Insert, options?: AthenaGatewayCallOptions): MutationQuery<Row>
+  >(table: string, values: Insert, options?: AthenaGatewayCallOptions): MutationQuery<Row, Row, TStrict>
   insert<
     Row = AthenaRowShape,
     Insert = Partial<Row>,
-  >(table: string, values: Insert[], options?: AthenaGatewayCallOptions): MutationQuery<Row[]>
+  >(table: string, values: Insert[], options?: AthenaGatewayCallOptions): MutationQuery<Row[], Row, TStrict>
 
   upsert<
     Row = AthenaRowShape,
@@ -55,7 +70,7 @@ export interface AthenaDbModule {
     table: string,
     values: Insert,
     options?: AthenaUpsertOptions<Update>,
-  ): MutationQuery<Row>
+  ): MutationQuery<Row, Row, TStrict>
   upsert<
     Row = AthenaRowShape,
     Insert = Partial<Row>,
@@ -64,24 +79,24 @@ export interface AthenaDbModule {
     table: string,
     values: Insert[],
     options?: AthenaUpsertOptions<Update>,
-  ): MutationQuery<Row[]>
+  ): MutationQuery<Row[], Row, TStrict>
 
   update<
     Row = AthenaRowShape,
     Insert = Partial<Row>,
     Update = Partial<Insert>,
-  >(table: string, values: Update, options?: AthenaGatewayCallOptions): UpdateChain<Row>
+  >(table: string, values: Update, options?: AthenaGatewayCallOptions): UpdateChain<Row, TStrict>
 
   delete<Row = AthenaRowShape>(
     table: string,
     options?: AthenaGatewayCallOptions & { resourceId?: string },
-  ): MutationQuery<Row | null>
+  ): MutationQuery<Row | null, Row, TStrict>
 
   rpc<Row = unknown, Args extends AthenaJsonObject = AthenaJsonObject>(
     fn: string,
     args?: Args,
     options?: AthenaRpcCallOptions,
-  ): RpcQueryBuilder<Row>
+  ): RpcQueryBuilder<Row, TStrict>
 
   query<Row = unknown>(
     query: string,
@@ -89,29 +104,26 @@ export interface AthenaDbModule {
   ): Promise<AthenaResult<Row[]>>
 }
 
-interface AthenaDbModuleFactoryInput {
-  from: AthenaSdkClient['from']
-  rpc: AthenaSdkClient['rpc']
-  query: AthenaSdkClient['query']
+interface AthenaDbModuleFactoryInput<TStrict extends boolean = false> {
+  from: AthenaSdkClient<TStrict>['from']
+  rpc: AthenaSdkClient<TStrict>['rpc']
+  query: AthenaSdkClient<TStrict>['query']
 }
 
-export function createDbModule(input: AthenaDbModuleFactoryInput): AthenaDbModule {
-  const db: AthenaDbModule = {
-    from<Row = AthenaRowShape, Insert = Partial<Row>, Update = Partial<Insert>>(
+export function createDbModule<TStrict extends boolean = false>(
+  input: AthenaDbModuleFactoryInput<TStrict>,
+): AthenaDbModule<TStrict> {
+  const db: AthenaDbModule<TStrict> = {
+    from: input.from,
+    select<Row = AthenaRowShape>(
       table: string,
-      options?: AthenaFromOptions,
+      first?: AthenaGatewayCallOptions | AthenaSelectInput,
+      second?: AthenaGatewayCallOptions,
     ) {
-      return input.from<Row, Insert, Update>(table, options)
-    },
-    select<
-      Row = AthenaRowShape,
-      SelectedRow = Row,
-    >(
-      table: string,
-      columns?: string | string[],
-      options?: AthenaGatewayCallOptions,
-    ) {
-      return input.from<Row>(table).select<SelectedRow>(columns, options)
+      if (first && typeof first === 'object' && !Array.isArray(first)) {
+        return input.from<Row>(table).select(undefined, first as AthenaGatewayCallOptions)
+      }
+      return input.from<Row>(table).select(first, second)
     },
     insert<Row = AthenaRowShape, Insert = Partial<Row>>(
       table: string,

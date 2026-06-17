@@ -44,6 +44,14 @@ export interface GeneratorExperimentalFlags {
 }
 
 /**
+ * Internal generator metadata carried on normalized configs and generated
+ * registry artifacts so downstream tooling can detect contract revisions.
+ */
+export interface GeneratorInternalConfig {
+  schemaVersion: number
+}
+
+/**
  * Path templates for each generated artifact category.
  */
 export interface GeneratorOutputTargets {
@@ -53,10 +61,22 @@ export interface GeneratorOutputTargets {
   registry: string
 }
 
+export type GeneratorOutputFormat = 'define-model' | 'table-builder'
+
 /**
  * Output configuration including dynamic placeholder aliases.
  */
 export interface GeneratorOutputConfig {
+  format?: GeneratorOutputFormat
+  targets?: Partial<GeneratorOutputTargets>
+  placeholderMap?: Record<string, string>
+}
+
+/**
+ * Normalized output configuration with defaults applied.
+ */
+export interface NormalizedGeneratorOutputConfig {
+  format: GeneratorOutputFormat
   targets: GeneratorOutputTargets
   placeholderMap: Record<string, string>
 }
@@ -78,6 +98,14 @@ export interface PostgresDirectProviderConfig {
   schemas?: GeneratorSchemaSelection
 }
 
+export interface PostgresDirectProviderInputConfig {
+  kind: 'postgres'
+  mode: 'direct'
+  connectionString?: string
+  database?: string
+  schemas?: GeneratorSchemaSelection
+}
+
 /**
  * Athena gateway-backed PostgreSQL introspection mode using `/gateway/query`.
  */
@@ -87,6 +115,16 @@ export interface PostgresGatewayProviderConfig {
   gatewayUrl: string
   apiKey: string
   database: string
+  schemas?: GeneratorSchemaSelection
+  backend?: BackendType
+}
+
+export interface PostgresGatewayProviderInputConfig {
+  kind: 'postgres'
+  mode: 'gateway'
+  gatewayUrl?: string
+  apiKey?: string
+  database?: string
   schemas?: GeneratorSchemaSelection
   backend?: BackendType
 }
@@ -102,17 +140,30 @@ export interface ScyllaDirectProviderConfig {
   datacenter?: string
 }
 
+export interface ScyllaDirectProviderInputConfig {
+  kind: 'scylla'
+  mode: 'direct'
+  contactPoints?: string[]
+  keyspace?: string
+  datacenter?: string
+}
+
 export type GeneratorProviderConfig =
   | PostgresDirectProviderConfig
   | PostgresGatewayProviderConfig
   | ScyllaDirectProviderConfig
 
+export type GeneratorProviderInputConfig =
+  | PostgresDirectProviderInputConfig
+  | PostgresGatewayProviderInputConfig
+  | ScyllaDirectProviderInputConfig
+
 /**
  * Root config contract loaded from `athena.config.ts`.
  */
 export interface AthenaGeneratorConfig {
-  provider: GeneratorProviderConfig
-  output: GeneratorOutputConfig
+  provider: GeneratorProviderInputConfig
+  output?: GeneratorOutputConfig
   naming?: Partial<GeneratorNamingConfig>
   features?: Partial<GeneratorFeatureFlags>
   experimental?: Partial<GeneratorExperimentalFlags>
@@ -123,10 +174,11 @@ export interface AthenaGeneratorConfig {
  */
 export interface NormalizedAthenaGeneratorConfig {
   provider: GeneratorProviderConfig
-  output: GeneratorOutputConfig
+  output: NormalizedGeneratorOutputConfig
   naming: GeneratorNamingConfig
   features: GeneratorFeatureFlags
   experimental: GeneratorExperimentalFlags
+  internal: GeneratorInternalConfig
 }
 
 /**

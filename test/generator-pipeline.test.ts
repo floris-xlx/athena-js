@@ -180,6 +180,100 @@ test('runSchemaGenerator loads athena.config.ts and writes generated artifacts',
   }
 })
 
+test('runSchemaGenerator supports table-builder output format', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'athena-generator-table-builder-run-'))
+  try {
+    writeFileSync(
+      join(root, 'athena.config.ts'),
+      `
+      export default {
+        provider: {
+          kind: 'postgres',
+          mode: 'direct',
+          connectionString: 'postgres://postgres:postgres@127.0.0.1:5432/phase_two',
+          database: 'phase_two',
+          schemas: ['public'],
+        },
+        output: {
+          format: 'table-builder',
+          targets: {
+            model: 'src/generated/{database_kebab}/{schema_kebab}/{model_kebab}.ts',
+            schema: 'src/generated/{database_kebab}/{schema_kebab}/index.ts',
+            database: 'src/generated/{database_kebab}/index.ts',
+            registry: 'src/generated/index.ts',
+          },
+        },
+      }
+      `,
+      'utf8',
+    )
+
+    const result = await runSchemaGenerator({
+      cwd: root,
+      provider: createSnapshotProvider(),
+      dryRun: true,
+    })
+
+    assert.equal(result.files.length, 4)
+    const modelFile = result.files.find(file => file.kind === 'model')
+    const registryFile = result.files.find(file => file.kind === 'registry')
+    assert.ok(modelFile)
+    assert.ok(registryFile)
+    assert.equal(modelFile.path, 'src/generated/phase-two/public/users.ts')
+    assert.equal(modelFile.content.includes("export const users = table('users')"), true)
+    assert.equal(modelFile.content.includes(".schema('public')"), true)
+    assert.equal(modelFile.content.includes("export const users_insert_schema = users.schemas.insert"), true)
+    assert.equal(registryFile.content.includes('schemaVersion: 1'), true)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('runSchemaGenerator works without a config file when environment defaults are present', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'athena-generator-env-only-run-'))
+  const previousValues = new Map<string, string | undefined>([
+    ['DATABASE_URL', process.env.DATABASE_URL],
+    ['ATHENA_GENERATOR_OUTPUT_FORMAT', process.env.ATHENA_GENERATOR_OUTPUT_FORMAT],
+  ])
+
+  delete process.env.DATABASE_URL
+  delete process.env.ATHENA_GENERATOR_OUTPUT_FORMAT
+
+  try {
+    writeFileSync(
+      join(root, '.env.local'),
+      [
+        'DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/phase_two',
+        'ATHENA_GENERATOR_OUTPUT_FORMAT=table-builder',
+      ].join('\n'),
+      'utf8',
+    )
+
+    const result = await runSchemaGenerator({
+      cwd: root,
+      provider: createSnapshotProvider(),
+      dryRun: true,
+    })
+
+    assert.equal(result.configPath, '[environment defaults]')
+    assert.equal(result.files.length, 4)
+    const modelFile = result.files.find(file => file.kind === 'model')
+    assert.ok(modelFile)
+    assert.equal(modelFile.path, 'athena/models/public/users.ts')
+    assert.equal(modelFile.content.includes("export const users = table('users')"), true)
+    assert.equal(modelFile.content.includes(".schema('public')"), true)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+    for (const [key, value] of previousValues.entries()) {
+      if (value === undefined) {
+        delete process.env[key]
+      } else {
+        process.env[key] = value
+      }
+    }
+  }
+})
+
 test('runSchemaGenerator passes normalized multi-schema selection to custom providers', async () => {
   const root = mkdtempSync(join(tmpdir(), 'athena-generator-schema-selection-'))
   const inspectedOptions: IntrospectionInspectOptions[] = []

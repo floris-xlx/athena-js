@@ -35,6 +35,16 @@ export {
   defineRegistry,
   defineSchema,
 } from './schema/definitions.ts'
+export {
+  table,
+} from './schema/table-builder.ts'
+export {
+  boolean,
+  enumeration,
+  json,
+  number,
+  string,
+} from './schema/table-columns.ts'
 export { createTypedClient } from './schema/typed-client.ts'
 export {
   createModelFormAdapter,
@@ -63,6 +73,7 @@ export {
   AthenaStorageErrorCode,
   createAthenaStorageError,
 } from './storage/module.ts'
+export { getAthenaDebugAst } from './query-debug-ast.ts'
 
 import type {
   PostgresIntrospectionProviderOptions,
@@ -149,13 +160,29 @@ export type {
   RpcQueryBuilder,
   RpcOrderOptions,
   AthenaCreateClientOptions,
+  AthenaCreateClientOptionsWithTypecheckedColumns,
   AthenaSdkClient,
   AthenaSdkClientWithAuth,
   AthenaSdkClientWithStorage,
   TableQueryBuilder,
   AthenaResult,
   AthenaCreateClientOptionsWithStorage,
+  AthenaCreateClientOptionsWithStorageAndTypecheckedColumns,
 } from './client.js'
+export type {
+  AthenaDeleteDebugAst,
+  AthenaFindManyDebugAst,
+  AthenaInsertDebugAst,
+  AthenaQueryDebugAst,
+  AthenaRawQueryDebugAst,
+  AthenaRpcBuilderStateAst,
+  AthenaRpcDebugAst,
+  AthenaSelectDebugAst,
+  AthenaSelectDebugTransport,
+  AthenaTableBuilderStateAst,
+  AthenaUpdateDebugAst,
+  AthenaUpsertDebugAst,
+} from './query-debug-ast.ts'
 export type { AthenaDbModule } from './db/module.js'
 export type {
   AthenaEnvelope,
@@ -218,8 +245,17 @@ export type {
   RetryBackoffStrategy,
 } from './auxiliaries.js'
 export type {
+  AthenaModelTarget,
+  AnyColumnBuilder,
+  AthenaColumnBuilder,
+  AthenaTableDef,
+  AthenaTableSchemaBundle,
+  ColumnRuntimeConfig,
   DatabaseDef,
+  FormValuesOf,
+  FormValuesFromColumns,
   InsertOf,
+  InsertFromColumns,
   IntrospectionColumn,
   IntrospectionInspectOptions,
   IntrospectionRelation,
@@ -227,6 +263,8 @@ export type {
   IntrospectionSnapshot,
   IntrospectionTable,
   IntrospectionTypeKind,
+  ModelColumnKind,
+  ModelColumnMetadata,
   ModelAt,
   ModelDef,
   ModelMetadata,
@@ -234,6 +272,7 @@ export type {
   ModelRelationMetadata,
   PostgresIntrospectionProviderOptions,
   RegistryDef,
+  RowFromColumns,
   RowOf,
   SchemaDef,
   SchemaIntrospectionProvider,
@@ -248,6 +287,8 @@ export type {
   ToModelPayloadOptions,
   TypedAthenaClient,
   TypedClientOptions,
+  TypedClientOptionsWithTypecheckedColumns,
+  UpdateFromColumns,
   UpdateOf,
 } from './schema/index.ts'
 export type {
@@ -257,14 +298,17 @@ export type {
   GeneratorArtifactKind,
   GeneratorExperimentalFlags,
   GeneratorFeatureFlags,
+  GeneratorInternalConfig,
   GeneratorNamingConfig,
   GeneratorOutputConfig,
+  GeneratorOutputFormat,
   GeneratorOutputTargets,
   GeneratorProviderConfig,
   GeneratorSchemaSelection,
   LoadGeneratorConfigOptions,
   LoadedGeneratorConfig,
   NamingStyle,
+  NormalizedGeneratorOutputConfig,
   NormalizedAthenaGeneratorConfig,
   RunGeneratorOptions,
   RunGeneratorResult,

@@ -162,11 +162,15 @@ test('generateArtifactsFromSnapshot renders model/schema/database/registry outpu
   assert.equal(paths.includes('src/generated/index.ts'), true)
 
   const modelFile = artifacts.files.find(file => file.kind === 'model')
+  const registryFile = artifacts.files.find(file => file.kind === 'registry')
   assert.ok(modelFile)
+  assert.ok(registryFile)
   assert.equal(modelFile.content.includes("table: string"), true)
   assert.equal(modelFile.content.includes("'space name'?: string | null"), true)
   assert.equal(modelFile.content.includes("mood?: 'happy' | 'sad' | null"), true)
   assert.equal(modelFile.content.includes('relations:'), true)
+  assert.equal(registryFile.content.includes('export const __athena_schema_meta = {'), true)
+  assert.equal(registryFile.content.includes('schemaVersion: 1'), true)
 })
 
 test('generateArtifactsFromSnapshot can disable registry emission with feature flags', () => {
@@ -277,4 +281,43 @@ test('generateArtifactsFromSnapshot keeps built-in placeholders stable when plac
   assert.equal(paths.includes('athena/public/schema.ts'), true)
   assert.equal(paths.includes('athena/athena/schema.ts'), true)
   assert.equal(paths.some(path => path.startsWith('athena/models/schema/')), false)
+})
+
+test('generateArtifactsFromSnapshot can render the zero-style table builder format', () => {
+  const config = defineGeneratorConfig({
+    provider: {
+      kind: 'postgres',
+      mode: 'direct',
+      connectionString: 'postgres://postgres:postgres@127.0.0.1:5432/app_db',
+      database: 'app_db',
+      schemas: ['public'],
+    },
+    output: {
+      format: 'table-builder',
+      targets: {
+        model: 'src/generated/{database_kebab}/{schema_kebab}/{model_kebab}.ts',
+        schema: 'src/generated/{database_kebab}/{schema_kebab}/index.ts',
+        database: 'src/generated/{database_kebab}/index.ts',
+        registry: 'src/generated/index.ts',
+      },
+    },
+    features: {
+      emitRelations: true,
+      emitRegistry: true,
+    },
+  })
+
+  const artifacts = generateArtifactsFromSnapshot(snapshot, config)
+  const modelFile = artifacts.files.find(file => file.kind === 'model')
+  const registryFile = artifacts.files.find(file => file.kind === 'registry')
+  assert.ok(modelFile)
+  assert.ok(registryFile)
+  assert.equal(modelFile.content.includes("export const users = table('users')"), true)
+  assert.equal(modelFile.content.includes(".schema('public')"), true)
+  assert.equal(modelFile.content.includes("'space name': string().optional()"), true)
+  assert.equal(modelFile.content.includes("mood: enumeration(['happy', 'sad'] as const).optional()"), true)
+  assert.equal(modelFile.content.includes('Object.assign(users.meta, {'), true)
+  assert.equal(modelFile.content.includes('export const users_row_schema = users.schemas.row'), true)
+  assert.equal(modelFile.content.includes('export type PublicUsersFormValues = FormValuesOf<typeof users>'), true)
+  assert.equal(registryFile.content.includes('outputFormat: \'table-builder\''), true)
 })
