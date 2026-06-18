@@ -1363,7 +1363,7 @@ interface AthenaGeneratorConfig {
 }
 ```
 
-`runSchemaGenerator(...)` returns snapshot + generated files + written files (unless dry-run).
+`runSchemaGenerator(...)` returns the normalized generator config, snapshot, generated files, and written files (unless dry-run).
 `loadGeneratorConfig(...)` now also supports env-only fallback when no `athena.config.*` file exists.
 
 ## React integration (`@xylex-group/athena/react`)

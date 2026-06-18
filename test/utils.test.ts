@@ -316,16 +316,18 @@ test('package exports expose ./utils entrypoint', async () => {
     exports: Record<
       string,
       {
-        import?: { default?: string; types?: string }
-        require?: { default?: string; types?: string }
+        types?: string
+        import?: string
+        require?: string
+        default?: string
       }
     >
   }
 
-  assert.equal(packageJson.exports['./utils']?.import?.default, './dist/utils.js')
-  assert.equal(packageJson.exports['./utils']?.import?.types, './dist/utils.d.ts')
-  assert.equal(packageJson.exports['./utils']?.require?.default, './dist/utils.cjs')
-  assert.equal(packageJson.exports['./utils']?.require?.types, './dist/utils.d.cts')
+  assert.equal(packageJson.exports['./utils']?.types, './dist/utils.d.ts')
+  assert.equal(packageJson.exports['./utils']?.import, './dist/utils.js')
+  assert.equal(packageJson.exports['./utils']?.require, './dist/utils.cjs')
+  assert.equal(packageJson.exports['./utils']?.default, './dist/utils.js')
 })
 
 test('proxyRequestHeaders removes host and applies forwarded headers from request URL', () => {

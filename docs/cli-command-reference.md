@@ -40,7 +40,7 @@ athena-js generate --help
 Options:
 
 - `--config <path>`: explicit config file (relative or absolute)
-- `--dry-run`: render artifacts and print output paths without writing files
+- `--dry-run`: render artifacts, print output paths, and print resolved format/target hints without writing files
 - `--help`, `-h`: show generate-specific help
 
 ## What each command does
@@ -48,7 +48,7 @@ Options:
 | Command | Effect |
 | --- | --- |
 | `athena-js generate` | Loads config or env-only defaults, introspects provider, writes generated files |
-| `athena-js generate --dry-run` | Same pipeline, no file writes |
+| `athena-js generate --dry-run` | Same pipeline, no file writes, plus resolved output-format/model-target hints |
 | `athena-js generate --config <path>` | Uses provided config path instead of discovery |
 | `athena-js generate --help` | Prints `generate` usage and exits |
 

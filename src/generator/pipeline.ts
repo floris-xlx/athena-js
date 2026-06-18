@@ -66,6 +66,7 @@ export async function runSchemaGenerator(options: RunGeneratorOptions = {}): Pro
   return {
     ...generated,
     configPath,
+    config,
     writtenFiles,
   }
 }

@@ -193,14 +193,16 @@ test('package exports expose ./cookies entrypoint', async () => {
     exports: Record<
       string,
       {
-        import?: { default?: string; types?: string }
-        require?: { default?: string; types?: string }
+        types?: string
+        import?: string
+        require?: string
+        default?: string
       }
     >
   }
 
-  assert.equal(packageJson.exports['./cookies']?.import?.default, './dist/cookies.js')
-  assert.equal(packageJson.exports['./cookies']?.import?.types, './dist/cookies.d.ts')
-  assert.equal(packageJson.exports['./cookies']?.require?.default, './dist/cookies.cjs')
-  assert.equal(packageJson.exports['./cookies']?.require?.types, './dist/cookies.d.cts')
+  assert.equal(packageJson.exports['./cookies']?.types, './dist/cookies.d.ts')
+  assert.equal(packageJson.exports['./cookies']?.import, './dist/cookies.js')
+  assert.equal(packageJson.exports['./cookies']?.require, './dist/cookies.cjs')
+  assert.equal(packageJson.exports['./cookies']?.default, './dist/cookies.js')
 })

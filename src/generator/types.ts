@@ -231,5 +231,6 @@ export interface RunGeneratorOptions {
  */
 export interface RunGeneratorResult extends GeneratedArtifacts {
   configPath: string
+  config: NormalizedAthenaGeneratorConfig
   writtenFiles: string[]
 }

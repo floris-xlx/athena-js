@@ -15,12 +15,13 @@ athena-js generate --dry-run
 
 Default output paths:
 
-- `athena/models/{schema}/{table}.ts`
+- `athena/models/{schema_kebab}/{model_kebab}.ts`
 - `athena/schemas/{schema}.ts`
 - `athena/relations.ts`
 - `athena/config.ts`
 
 The default schema selection is `public`.
+The default output format is still legacy `define-model`.
 
 Useful zero-config env overrides:
 
@@ -110,6 +111,12 @@ export default defineGeneratorConfig({
   },
 });
 ```
+
+Important:
+
+- `output.format = "table-builder"` is stable and does not require an experimental flag
+- `experimental.findManyAst` is a separate runtime opt-in and does not affect generator output
+- if you want flat `athena/models/*.ts` files instead of schema-scoped defaults, set `output.targets.model = "athena/models/{model_kebab}.ts"` or `ATHENA_GENERATOR_MODEL_TARGET=athena/models/{model_kebab}.ts`
 
 That yields files shaped like:
 

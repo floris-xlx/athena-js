@@ -47,7 +47,7 @@ function generateUsage(): string {
     '',
     'Options:',
     '  --config <path>  Explicit path to athena.config.ts or athena-js.config.ts',
-    '  --dry-run        Build generated files in memory without writing them to disk',
+    '  --dry-run        Build generated files in memory without writing them to disk and print mode/target hints',
     '  -h, --help       Show help for generate',
     '',
     'Config resolution:',
@@ -60,6 +60,36 @@ function generateUsage(): string {
     '  DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/app_db athena-js generate --dry-run',
     '  athena-js generate --config ./athena.config.ts --dry-run',
   ].join('\n')
+}
+
+function usesSchemaScopedModelTarget(target: string): boolean {
+  return /\{schema(?:_[a-z]+)?\}/.test(target)
+}
+
+function formatGeneratorModeLines(
+  result: Awaited<ReturnType<typeof runSchemaGenerator>>,
+): string[] {
+  const lines = [
+    `[mode] format=${result.config.output.format} modelTarget=${result.config.output.targets.model}`,
+  ]
+
+  if (result.config.output.format === 'define-model') {
+    lines.push(
+      '[note] Zero-style table-builder files are not active. Set output.format="table-builder" or ATHENA_GENERATOR_OUTPUT_FORMAT=table-builder to emit table(...).schema(...).columns(...).primaryKey(...).',
+    )
+  }
+
+  lines.push(
+    '[note] Table-builder generation is stable. experimental.findManyAst only affects runtime findMany(...) transport and does not enable generator table output.',
+  )
+
+  if (usesSchemaScopedModelTarget(result.config.output.targets.model)) {
+    lines.push(
+      '[note] Flat athena/models/*.ts output is opt-in. Set output.targets.model="athena/models/{model_kebab}.ts" or ATHENA_GENERATOR_MODEL_TARGET=athena/models/{model_kebab}.ts; multi-schema collisions are still auto-scoped by schema when needed.',
+    )
+  }
+
+  return lines
 }
 
 export function usage(topic: HelpCommand['topic'] = 'root'): string {
@@ -191,6 +221,9 @@ export async function runCLI(argv: string[], runtime: CliRuntime = {}): Promise<
 
   if (parsed.dryRun) {
     log(`[dry-run] Generated ${result.files.length} files from ${result.configPath}`)
+    for (const line of formatGeneratorModeLines(result)) {
+      log(line)
+    }
     for (const file of result.files) {
       log(` - ${file.path}`)
     }
@@ -198,6 +231,9 @@ export async function runCLI(argv: string[], runtime: CliRuntime = {}): Promise<
   }
 
   log(`Generated ${result.writtenFiles.length} files from ${result.configPath}`)
+  for (const line of formatGeneratorModeLines(result)) {
+    log(line)
+  }
   for (const filePath of result.writtenFiles) {
     log(` - ${filePath}`)
   }

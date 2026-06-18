@@ -1,6 +1,50 @@
 import { strict as assert } from 'assert'
 import { test } from 'node:test'
 import { parseCommand, runCLI, usage, type CliRuntime } from '../src/cli/index.ts'
+import type { NormalizedAthenaGeneratorConfig } from '../src/generator/index.ts'
+
+function createNormalizedGeneratorConfig(
+  format: 'define-model' | 'table-builder',
+  modelTarget = 'athena/models/{schema_kebab}/{model_kebab}.ts',
+): NormalizedAthenaGeneratorConfig {
+  return {
+    provider: {
+      kind: 'postgres',
+      mode: 'direct',
+      connectionString: 'postgres://postgres:postgres@127.0.0.1:5432/app_db',
+      database: 'app_db',
+      schemas: ['public'],
+    },
+    output: {
+      format,
+      targets: {
+        model: modelTarget,
+        schema: 'athena/schemas/{schema_kebab}.ts',
+        database: 'athena/relations.ts',
+        registry: 'athena/config.ts',
+      },
+      placeholderMap: {},
+    },
+    naming: {
+      modelType: 'pascal',
+      modelConst: 'camel',
+      schemaConst: 'camel',
+      databaseConst: 'camel',
+      registryConst: 'camel',
+    },
+    features: {
+      emitRelations: true,
+      emitRegistry: true,
+    },
+    experimental: {
+      postgresGatewayIntrospection: false,
+      scyllaProviderContracts: true,
+    },
+    internal: {
+      schemaVersion: 1,
+    },
+  }
+}
 
 test('parseCommand supports generate subcommand help flag', () => {
   const parsed = parseCommand(['generate', '--help'])
@@ -41,6 +85,7 @@ test('runCLI prints dry-run output for legacy define-model artifacts', async () 
     },
     runGenerator: async () => ({
       configPath: 'C:/tmp/athena.config.ts',
+      config: createNormalizedGeneratorConfig('define-model'),
       snapshot: {
         backend: 'postgresql',
         database: 'app_db',
@@ -59,7 +104,11 @@ test('runCLI prints dry-run output for legacy define-model artifacts', async () 
   })
 
   assert.equal(logs[0].includes('[dry-run] Generated 1 files'), true)
-  assert.equal(logs[1], ' - src/generated/app-db/public/users.model.ts')
+  assert.equal(logs[1], '[mode] format=define-model modelTarget=athena/models/{schema_kebab}/{model_kebab}.ts')
+  assert.equal(logs[2].includes('Zero-style table-builder files are not active'), true)
+  assert.equal(logs[3].includes('experimental.findManyAst only affects runtime findMany(...) transport'), true)
+  assert.equal(logs[4].includes('Flat athena/models/*.ts output is opt-in'), true)
+  assert.equal(logs[5], ' - src/generated/app-db/public/users.model.ts')
 })
 
 test('runCLI prints dry-run output for table-builder artifacts', async () => {
@@ -70,6 +119,7 @@ test('runCLI prints dry-run output for table-builder artifacts', async () => {
     },
     runGenerator: async () => ({
       configPath: 'C:/tmp/athena.config.ts',
+      config: createNormalizedGeneratorConfig('table-builder'),
       snapshot: {
         backend: 'postgresql',
         database: 'app_db',
@@ -88,7 +138,10 @@ test('runCLI prints dry-run output for table-builder artifacts', async () => {
   })
 
   assert.equal(logs[0].includes('[dry-run] Generated 1 files'), true)
-  assert.equal(logs[1], ' - src/generated/app-db/public/users.ts')
+  assert.equal(logs[1], '[mode] format=table-builder modelTarget=athena/models/{schema_kebab}/{model_kebab}.ts')
+  assert.equal(logs[2].includes('Table-builder generation is stable'), true)
+  assert.equal(logs[3].includes('Flat athena/models/*.ts output is opt-in'), true)
+  assert.equal(logs[4], ' - src/generated/app-db/public/users.ts')
 })
 
 test('runCLI normalizes postgres missing database errors with actionable guidance', async () => {

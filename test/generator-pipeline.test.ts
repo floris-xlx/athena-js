@@ -170,6 +170,7 @@ test('runSchemaGenerator loads athena.config.ts and writes generated artifacts',
 
     assert.equal(result.files.length, 4)
     assert.equal(result.writtenFiles.length, 4)
+    assert.equal(result.config.output.format, 'define-model')
 
     const modelPath = join(root, 'src', 'generated', 'phase-two', 'public', 'users.model.ts')
     const content = readFileSync(modelPath, 'utf8')
@@ -215,6 +216,7 @@ test('runSchemaGenerator supports table-builder output format', async () => {
     })
 
     assert.equal(result.files.length, 4)
+    assert.equal(result.config.output.format, 'table-builder')
     const modelFile = result.files.find(file => file.kind === 'model')
     const registryFile = result.files.find(file => file.kind === 'registry')
     assert.ok(modelFile)
@@ -257,6 +259,7 @@ test('runSchemaGenerator works without a config file when environment defaults a
 
     assert.equal(result.configPath, '[environment defaults]')
     assert.equal(result.files.length, 4)
+    assert.equal(result.config.output.format, 'table-builder')
     const modelFile = result.files.find(file => file.kind === 'model')
     assert.ok(modelFile)
     assert.equal(modelFile.path, 'athena/models/public/users.ts')

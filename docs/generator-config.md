@@ -25,7 +25,7 @@ athena-js help generate
 Output:
 
 - in normal mode, writes files to disk using configured targets
-- with `--dry-run`, prints the file list only
+- with `--dry-run`, prints the file list plus the resolved output format and model-target hints
 
 For the full command matrix and troubleshooting, see
 [`cli-command-reference.md`](cli-command-reference.md).
@@ -345,12 +345,23 @@ interface GeneratorOutputTargets {
 The defaults include the schema name in model and schema paths so `public.users`
 and `athena.users` can be generated in the same run without path collisions.
 
+If you want flat `athena/models/*.ts` output, override `output.targets.model`
+to `athena/models/{model_kebab}.ts` (or set
+`ATHENA_GENERATOR_MODEL_TARGET=athena/models/{model_kebab}.ts`). When
+multiple schemas still collide on the same table name, the renderer auto-scopes
+the conflicting files back under schema folders.
+
 ### `output.format`
 
 Use `output.format` to choose the model artifact style:
 
 - `"define-model"`: emits legacy `defineModel<...>` files
 - `"table-builder"`: emits Zero-style `table(...).columns(...).primaryKey(...)` files with exported Zod schemas
+
+`"table-builder"` is stable generator output. It does not require an
+experimental flag. The runtime-only client flag `experimental.findManyAst`
+controls `findMany(...)` transport behavior and is unrelated to generated model
+artifacts.
 
 Example:
 
