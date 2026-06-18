@@ -224,11 +224,20 @@ export interface PresignedFileUrlResponse {
   storage_key: string
   purpose: string
   url: string
+  headers?: Record<string, string>
   expires_at: string
   expires_at_epoch_seconds: number
   expires_in: number
   cache_hit: boolean
   cache_layer: string
+}
+
+export interface StorageServerSideEncryptionOptions {
+  server_side_encryption?: 'AES256' | 'aws:kms' | 'aws:kms:dsse' | (string & {})
+  sse?: 'AES256' | 'aws:kms' | 'aws:kms:dsse' | (string & {})
+  ssekms_key_id?: string
+  kms_key_id?: string
+  bucket_key_enabled?: boolean
 }
 
 export interface CreateStorageCatalogRequest {
@@ -262,7 +271,7 @@ export interface UpdateStorageCatalogRequest {
   metadata?: Record<string, unknown>
 }
 
-export interface CreateStorageUploadUrlRequest {
+export interface CreateStorageUploadUrlRequest extends StorageServerSideEncryptionOptions {
   s3_id: string
   bucket?: string
   storage_key: string
@@ -293,17 +302,44 @@ export interface StorageBatchUploadUrlResponse {
 
 export interface ListStorageFilesRequest {
   s3_id: string
-  prefix: string
+  prefix?: string
+  limit?: number
+  offset?: number
+  metadata?: Record<string, unknown>
+  name?: string
+  resource_id?: string
+  mime_type?: string
+  content_type?: string
+  status?: string
+  visibility?: 'private' | 'organization' | 'public' | (string & {})
+  bucket?: string
+  key_prefix?: string
 }
 
 export interface StorageListFilesResponse {
   files: ManagedFileRecord[]
   count: number
+  total?: number
+  limit?: number
+  offset?: number
+  next_offset?: number | null
+  has_more?: boolean
 }
 
 export interface UpdateStorageFileRequest {
-  storage_key: string
+  storage_key?: string
   bucket?: string
+  name?: string
+  file_name?: string
+  original_name?: string
+  resource_id?: string
+  mime_type?: string
+  content_type?: string
+  size_bytes?: number
+  checksum_sha256?: string
+  visibility?: 'private' | 'organization' | 'public' | (string & {})
+  status?: string
+  metadata?: Record<string, unknown>
 }
 
 export interface SetStorageFileVisibilityRequest {
@@ -390,6 +426,18 @@ export interface ConfirmStorageUploadRequest {
 export interface SearchStorageFilesRequest {
   query?: string
   limit?: number
+  offset?: number
+  s3_id?: string
+  prefix?: string
+  metadata?: Record<string, unknown>
+  name?: string
+  resource_id?: string
+  mime_type?: string
+  content_type?: string
+  status?: string
+  visibility?: 'private' | 'organization' | 'public' | (string & {})
+  bucket?: string
+  key_prefix?: string
 }
 
 export interface DeleteManyStorageFilesRequest {
@@ -398,8 +446,19 @@ export interface DeleteManyStorageFilesRequest {
 
 export interface UpdateManyStorageFilesRequest {
   file_ids: string[]
-  storage_key: string
+  storage_key?: string
   bucket?: string
+  name?: string
+  file_name?: string
+  original_name?: string
+  resource_id?: string
+  mime_type?: string
+  content_type?: string
+  size_bytes?: number
+  checksum_sha256?: string
+  visibility?: 'private' | 'organization' | 'public' | (string & {})
+  status?: string
+  metadata?: Record<string, unknown>
 }
 
 export interface SetManyStorageFileVisibilityRequest {
@@ -408,7 +467,7 @@ export interface SetManyStorageFileVisibilityRequest {
   visibility?: 'private' | 'organization' | 'public'
 }
 
-export interface CopyStorageFileRequest {
+export interface CopyStorageFileRequest extends StorageServerSideEncryptionOptions {
   storage_key: string
   bucket?: string
   file_name?: string
@@ -451,7 +510,7 @@ export interface StoragePermissionCheckRequest {
   permission: 'read' | 'write' | 'delete' | 'share' | 'owner'
 }
 
-export interface StorageMultipartCreateRequest {
+export interface StorageMultipartCreateRequest extends StorageServerSideEncryptionOptions {
   file_id: string
   content_type?: string
 }
@@ -511,7 +570,12 @@ export interface StorageObjectRequest extends StorageObjectBaseRequest {
   key: string
 }
 
-export interface StorageObjectCopyRequest extends StorageObjectBaseRequest {
+export interface StorageObjectValidateRequest extends StorageObjectRequest {
+  checksum_sha256?: string
+  etag?: string
+}
+
+export interface StorageObjectCopyRequest extends StorageObjectBaseRequest, StorageServerSideEncryptionOptions {
   source_key: string
   destination_key: string
   destination_bucket?: string
@@ -539,7 +603,29 @@ export interface StorageUpdateObjectRequest extends StorageObjectRequest {
   metadata?: Record<string, string>
 }
 
-export interface StoragePresignUploadRequest extends StorageObjectRequest {
+export interface StorageObjectVersionListRequest extends StorageObjectBaseRequest {
+  key?: string
+  max_keys?: number
+  key_marker?: string
+  version_id_marker?: string
+  delimiter?: string
+}
+
+export interface StorageObjectVersionMutationRequest extends StorageObjectRequest {
+  version_id: string
+}
+
+export interface StorageSignedPostPolicyRequest extends StorageObjectRequest, StorageServerSideEncryptionOptions {
+  content_type?: string
+  min_size?: number
+  max_size?: number
+  expires_in?: number
+  public_base_url?: string
+  force_path_style?: boolean
+  success_action_status?: string
+}
+
+export interface StoragePresignUploadRequest extends StorageObjectRequest, StorageServerSideEncryptionOptions {
   content_type?: string
 }
 
@@ -555,6 +641,50 @@ export interface StorageBucketCorsRuleInput {
 
 export interface StorageSetBucketCorsRequest extends StorageBucketCorsRequest {
   rules: StorageBucketCorsRuleInput[]
+}
+
+export type StorageBucketLifecycleRequest = StorageObjectBaseRequest
+
+export interface StorageBucketLifecycleRuleInput {
+  id?: string
+  prefix?: string
+  status?: 'Enabled' | 'Disabled' | 'enabled' | 'disabled' | (string & {})
+  expiration_days?: number
+  expired_object_delete_marker?: boolean
+  noncurrent_version_expiration_days?: number
+  abort_incomplete_multipart_upload_days?: number
+}
+
+export interface StorageSetBucketLifecycleRequest extends StorageBucketLifecycleRequest {
+  rules: StorageBucketLifecycleRuleInput[]
+}
+
+export type StorageBucketPolicyRequest = StorageObjectBaseRequest
+
+export interface StorageSetBucketPolicyRequest extends StorageBucketPolicyRequest {
+  policy: Record<string, unknown> | string
+}
+
+export type StoragePublicAccessBlockRequest = StorageObjectBaseRequest
+
+export interface StorageSetPublicAccessBlockRequest extends StoragePublicAccessBlockRequest {
+  block_public_acls?: boolean
+  ignore_public_acls?: boolean
+  block_public_policy?: boolean
+  restrict_public_buckets?: boolean
+}
+
+export interface StorageFileVersionPathRequest {
+  file_id: string
+  version_id: string
+}
+
+export interface StorageFileRetentionRequest {
+  mode?: 'GOVERNANCE' | 'COMPLIANCE' | (string & {})
+  retain_until?: string
+  retain_until_date?: string
+  version_id?: string
+  bypass_governance?: boolean
 }
 
 export interface StorageAuditQueryRequest {
@@ -862,11 +992,39 @@ export interface AthenaStorageFileNamespace extends AthenaStorageFileModule {
     options?: AthenaStorageCallOptions,
   ): Promise<PresignedFileUrlResponse>
   publicUrl(fileId: string, options?: AthenaStorageCallOptions): Promise<Record<string, unknown>>
+  proxyUrl(
+    fileId: string,
+    query?: GetStorageFileUrlQuery,
+    options?: AthenaStorageCallOptions,
+  ): Promise<Record<string, unknown>>
   proxy(
     fileId: string,
     query?: GetStorageFileUrlQuery,
     options?: AthenaStorageBinaryCallOptions,
   ): Promise<Response>
+  versions(fileId: string, options?: AthenaStorageCallOptions): Promise<Record<string, unknown>>
+  restoreVersion(
+    fileId: string,
+    versionId: string,
+    options?: AthenaStorageCallOptions,
+  ): Promise<Record<string, unknown>>
+  deleteVersion(
+    fileId: string,
+    versionId: string,
+    options?: AthenaStorageCallOptions,
+  ): Promise<Record<string, unknown>>
+  retention: {
+    get(
+      fileId: string,
+      query?: Pick<StorageFileRetentionRequest, 'version_id'>,
+      options?: AthenaStorageCallOptions,
+    ): Promise<Record<string, unknown>>
+    set(
+      fileId: string,
+      input: StorageFileRetentionRequest,
+      options?: AthenaStorageCallOptions,
+    ): Promise<Record<string, unknown>>
+  }
   visibility: {
     set(
       fileId: string,
@@ -915,13 +1073,23 @@ export interface AthenaStorageObjectNamespace {
   list(input: StorageListObjectsRequest, options?: AthenaStorageCallOptions): Promise<Record<string, unknown>>
   head(input: StorageObjectRequest, options?: AthenaStorageCallOptions): Promise<Record<string, unknown>>
   exists(input: StorageObjectRequest, options?: AthenaStorageCallOptions): Promise<Record<string, unknown>>
-  validate(input: StorageObjectRequest, options?: AthenaStorageCallOptions): Promise<Record<string, unknown>>
+  validate(input: StorageObjectValidateRequest, options?: AthenaStorageCallOptions): Promise<Record<string, unknown>>
   update(input: StorageUpdateObjectRequest, options?: AthenaStorageCallOptions): Promise<Record<string, unknown>>
   copy(input: StorageObjectCopyRequest, options?: AthenaStorageCallOptions): Promise<Record<string, unknown>>
   url(input: StorageObjectRequest, options?: AthenaStorageCallOptions): Promise<Record<string, unknown>>
   publicUrl(input: StorageObjectPublicUrlRequest, options?: AthenaStorageCallOptions): Promise<Record<string, unknown>>
   delete(input: StorageObjectRequest, options?: AthenaStorageCallOptions): Promise<Record<string, unknown>>
   uploadUrl(input: StoragePresignUploadRequest, options?: AthenaStorageCallOptions): Promise<Record<string, unknown>>
+  versions(input: StorageObjectVersionListRequest, options?: AthenaStorageCallOptions): Promise<Record<string, unknown>>
+  restoreVersion(
+    input: StorageObjectVersionMutationRequest,
+    options?: AthenaStorageCallOptions,
+  ): Promise<Record<string, unknown>>
+  deleteVersion(
+    input: StorageObjectVersionMutationRequest,
+    options?: AthenaStorageCallOptions,
+  ): Promise<Record<string, unknown>>
+  postPolicy(input: StorageSignedPostPolicyRequest, options?: AthenaStorageCallOptions): Promise<Record<string, unknown>>
   folder: AthenaStorageObjectFolderNamespace
 }
 
@@ -935,6 +1103,21 @@ export interface AthenaStorageBucketNamespace {
   list(input: Omit<StorageObjectBaseRequest, 'bucket'>, options?: AthenaStorageCallOptions): Promise<Record<string, unknown>>
   create(input: StorageObjectBaseRequest, options?: AthenaStorageCallOptions): Promise<Record<string, unknown>>
   delete(input: StorageObjectBaseRequest, options?: AthenaStorageCallOptions): Promise<Record<string, unknown>>
+  lifecycle: {
+    get(input: StorageBucketLifecycleRequest, options?: AthenaStorageCallOptions): Promise<Record<string, unknown>>
+    set(input: StorageSetBucketLifecycleRequest, options?: AthenaStorageCallOptions): Promise<Record<string, unknown>>
+    delete(input: StorageBucketLifecycleRequest, options?: AthenaStorageCallOptions): Promise<Record<string, unknown>>
+  }
+  policy: {
+    get(input: StorageBucketPolicyRequest, options?: AthenaStorageCallOptions): Promise<Record<string, unknown>>
+    set(input: StorageSetBucketPolicyRequest, options?: AthenaStorageCallOptions): Promise<Record<string, unknown>>
+    delete(input: StorageBucketPolicyRequest, options?: AthenaStorageCallOptions): Promise<Record<string, unknown>>
+  }
+  publicAccess: {
+    get(input: StoragePublicAccessBlockRequest, options?: AthenaStorageCallOptions): Promise<Record<string, unknown>>
+    set(input: StorageSetPublicAccessBlockRequest, options?: AthenaStorageCallOptions): Promise<Record<string, unknown>>
+    delete(input: StoragePublicAccessBlockRequest, options?: AthenaStorageCallOptions): Promise<Record<string, unknown>>
+  }
   cors: AthenaStorageBucketCorsNamespace
 }
 
@@ -1813,8 +1996,54 @@ export function createStorageModule(
     publicUrl(fileId, options) {
       return callAthena(withPathParam('/storage/files/{file_id}/public-url', 'file_id', fileId), 'GET', undefined, options)
     },
+    proxyUrl(fileId, query, options) {
+      const path = appendQuery(
+        withPathParam('/storage/files/{file_id}/proxy-url', 'file_id', fileId),
+        query,
+      )
+      return callAthena(path, 'GET', undefined, options)
+    },
     proxy(fileId, query, options) {
       return base.getStorageFileProxy(fileId, query, options)
+    },
+    versions(fileId, options) {
+      return callAthena(withPathParam('/storage/files/{file_id}/versions', 'file_id', fileId), 'GET', undefined, options)
+    },
+    restoreVersion(fileId, versionId, options) {
+      return callAthena(
+        withPathParam(
+          withPathParam('/storage/files/{file_id}/versions/{version_id}/restore', 'file_id', fileId),
+          'version_id',
+          versionId,
+        ),
+        'POST',
+        {},
+        options,
+      )
+    },
+    deleteVersion(fileId, versionId, options) {
+      return callAthena(
+        withPathParam(
+          withPathParam('/storage/files/{file_id}/versions/{version_id}', 'file_id', fileId),
+          'version_id',
+          versionId,
+        ),
+        'DELETE',
+        undefined,
+        options,
+      )
+    },
+    retention: {
+      get(fileId, query, options) {
+        const path = appendQuery(
+          withPathParam('/storage/files/{file_id}/retention', 'file_id', fileId),
+          query,
+        )
+        return callAthena(path, 'GET', undefined, options)
+      },
+      set(fileId, input, options) {
+        return callAthena(withPathParam('/storage/files/{file_id}/retention', 'file_id', fileId), 'POST', input, options)
+      },
     },
     visibility: {
       set(fileId, input, options) {
