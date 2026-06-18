@@ -8,6 +8,7 @@ const sourceFiles = [
   'src/client.ts',
   'src/db/module.ts',
   'src/auth/types.ts',
+  'src/storage/module.ts',
   'src/react/index.ts',
   'src/react/query-client.ts',
   'src/react/provider.ts',
@@ -328,6 +329,54 @@ function exampleForPath(pathName, minArgs) {
     return `athena.db.${method}(/* ... */)`
   }
 
+  if (pathName.startsWith('athena.storage.')) {
+    const method = pathName.split('.').at(-1)
+    if (pathName === 'athena.storage.listStorageCatalogs') return 'await athena.storage.listStorageCatalogs()'
+    if (pathName === 'athena.storage.listStorageCredentials') return 'await athena.storage.listStorageCredentials()'
+    if (pathName === 'athena.storage.getStorageFile') return 'await athena.storage.getStorageFile("file_1")'
+    if (pathName === 'athena.storage.getStorageFileUrl') {
+      return 'await athena.storage.getStorageFileUrl("file_1", { purpose: "download" })'
+    }
+    if (pathName === 'athena.storage.getStorageFileProxy') {
+      return 'await athena.storage.getStorageFileProxy("file_1", { purpose: "stream" })'
+    }
+    if (pathName === 'athena.storage.file.upload') {
+      return 'await athena.storage.file.upload({ s3_id: "s3_1", files: selectedFile })'
+    }
+    if (pathName === 'athena.storage.file.download') {
+      return 'await athena.storage.file.download("file_1", { purpose: "download" })'
+    }
+    if (pathName === 'athena.storage.file.get') return 'await athena.storage.file.get("file_1")'
+    if (pathName === 'athena.storage.file.update') {
+      return 'await athena.storage.file.update("file_1", { storage_key: "reports/archive.pdf" })'
+    }
+    if (pathName === 'athena.storage.file.copy') {
+      return 'await athena.storage.file.copy("file_1", { storage_key: "reports/report-copy.pdf" })'
+    }
+    if (pathName === 'athena.storage.file.visibility.update') {
+      return 'await athena.storage.file.visibility.update("file_1", { public: true })'
+    }
+    if (pathName === 'athena.storage.file.visibility.set') {
+      return 'await athena.storage.file.visibility.set("file_1", { visibility: "public" })'
+    }
+    if (pathName === 'athena.storage.file.visibility.setMany') {
+      return 'await athena.storage.file.visibility.setMany({ file_ids: ["file_1"], public: true })'
+    }
+    if (pathName === 'athena.storage.object.exists') {
+      return 'await athena.storage.object.exists({ endpoint: "https://s3.example.com", region: "us-east-1", access_key_id: "AKIA...", secret_key: "secret", bucket: "documents", key: "reports/report.pdf" })'
+    }
+    if (pathName === 'athena.storage.bucket.cors.get') {
+      return 'await athena.storage.bucket.cors.get({ endpoint: "https://s3.example.com", region: "us-east-1", access_key_id: "AKIA...", secret_key: "secret", bucket: "documents" })'
+    }
+    if (pathName === 'athena.storage.multipart.create') {
+      return 'await athena.storage.multipart.create({ file_id: "file_1", content_type: "application/pdf" })'
+    }
+    if (pathName === 'athena.storage.audit.list') {
+      return 'await athena.storage.audit.list({ file_id: "file_1" })'
+    }
+    return `await ${pathName}(/* ... */)`
+  }
+
   if (pathName.startsWith('AthenaQueryClient.')) {
     const method = pathName.split('.').at(-1)
     if (method === 'constructor') return 'const queryClient = new AthenaQueryClient({ cache: { mode: "memory" } })'
@@ -401,6 +450,7 @@ const runtimeSelectChain = collectInterfaceMethods('src/client.ts', 'SelectChain
 const runtimeUpdateChain = collectInterfaceMethods('src/client.ts', 'UpdateChain', 'athena.from.update', { recursive: false })
 const runtimeRpcBuilder = collectInterfaceMethods('src/client.ts', 'RpcQueryBuilder', 'athena.rpc', { recursive: false })
 const runtimeDb = collectInterfaceMethods('src/db/module.ts', 'AthenaDbModule', 'athena.db', { recursive: false })
+const runtimeStorage = collectInterfaceMethods('src/storage/module.ts', 'AthenaStorageModule', 'athena.storage')
 
 const authBindings = collectInterfaceMethods('src/auth/types.ts', 'AthenaAuthBindings', 'athena.auth', { recursive: true })
 
@@ -430,6 +480,7 @@ const sections = [
       ...runtimeBuilder,
       ...runtimeClient,
       ...runtimeDb,
+      ...runtimeStorage,
       ...runtimeTableBuilder,
       ...runtimeSelectChain,
       ...runtimeUpdateChain,

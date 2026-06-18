@@ -142,6 +142,23 @@ export const storageSdkManifest = {
       responseType: 'StorageFileMutationResponse',
     },
     {
+      name: 'postStorageFileVisibility',
+      method: 'POST',
+      path: '/storage/files/{file_id}/visibility',
+      pathParams: ['file_id'],
+      requestType: 'SetStorageFileVisibilityRequest',
+      responseEnvelope: 'athena',
+      responseType: 'StorageFileMutationResponse',
+    },
+    {
+      name: 'setManyStorageFileVisibility',
+      method: 'POST',
+      path: '/storage/files/visibility-many',
+      requestType: 'SetManyStorageFileVisibilityRequest',
+      responseEnvelope: 'athena',
+      responseType: 'StorageFileMutationManyResponse',
+    },
+    {
       name: 'deleteStorageFolder',
       method: 'POST',
       path: '/storage/folders/delete',
@@ -1504,6 +1521,11 @@ export interface AthenaStorageFileNamespace extends AthenaStorageFileModule {
     ): Promise<Record<string, unknown>>
   }
   visibility: {
+    update(
+      fileId: string,
+      input: SetStorageFileVisibilityRequest,
+      options?: AthenaStorageCallOptions,
+    ): Promise<StorageFileMutationResponse>
     set(
       fileId: string,
       input: SetStorageFileVisibilityRequest,
@@ -2349,8 +2371,19 @@ export function createStorageModule(
     method,
     'athena',
     payload,
+      options,
+      resolvedRuntimeOptions,
+  )
+  const callStorageFileVisibility = (
+    fileId: string,
+    method: Extract<AthenaGatewayMethod, 'PATCH' | 'POST'>,
+    input: SetStorageFileVisibilityRequest,
+    options?: AthenaStorageCallOptions,
+  ) => callAthena<StorageFileMutationResponse>(
+    withPathParam('/storage/files/{file_id}/visibility', 'file_id', fileId),
+    method,
+    input,
     options,
-    resolvedRuntimeOptions,
   )
   const base: AthenaStorageBaseModule = {
     listStorageCatalogs(options) {
@@ -2401,7 +2434,7 @@ export function createStorageModule(
       return callAthena(withPathParam('/storage/files/{file_id}', 'file_id', fileId), 'DELETE', undefined, options)
     },
     setStorageFileVisibility(fileId, input, options) {
-      return callAthena(withPathParam('/storage/files/{file_id}/visibility', 'file_id', fileId), 'PATCH', input, options)
+      return callStorageFileVisibility(fileId, 'PATCH', input, options)
     },
     deleteStorageFolder(input, options) {
       return callAthena('/storage/folders/delete', 'POST', input, options)
@@ -2529,8 +2562,11 @@ export function createStorageModule(
       },
     },
     visibility: {
-      set(fileId, input, options) {
+      update(fileId, input, options) {
         return base.setStorageFileVisibility(fileId, input, options)
+      },
+      set(fileId, input, options) {
+        return callStorageFileVisibility(fileId, 'POST', input, options)
       },
       setMany(input, options) {
         return callAthena('/storage/files/visibility-many', 'POST', input, options)

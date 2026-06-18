@@ -561,7 +561,15 @@ await athena.storage.delete("file_1")
 
 ```ts
 interface AthenaStorageModule {
-  file: AthenaStorageFileModule
+  credentials: AthenaStorageCredentialsNamespace
+  catalog: AthenaStorageCatalogNamespace
+  file: AthenaStorageFileNamespace
+  folder: AthenaStorageFolderNamespace
+  permission: AthenaStoragePermissionNamespace
+  object: AthenaStorageObjectNamespace
+  bucket: AthenaStorageBucketNamespace
+  multipart: AthenaStorageMultipartNamespace
+  audit: AthenaStorageAuditNamespace
   delete(fileId: string, options?: AthenaStorageCallOptions): Promise<StorageFileMutationResponse>
   delete(fileIds: readonly string[], options?: AthenaStorageCallOptions): Promise<StorageFileMutationResponse[]>
   listStorageCatalogs(options?: AthenaStorageCallOptions): Promise<{ data: S3CatalogItem[] }>
@@ -582,13 +590,115 @@ interface AthenaStorageModule {
   moveStorageFolder(input: MoveStorageFolderRequest, options?: AthenaStorageCallOptions): Promise<StorageFolderMutationResponse>
 }
 
-interface AthenaStorageFileModule {
+interface AthenaStorageFileNamespace extends AthenaStorageFileModule {
+  upload(input: AthenaStorageFileUploadRequest, options?: AthenaStorageCallOptions): Promise<StorageUploadUrlResponseWithPut>
   upload(input: AthenaStorageFileUploadInput, options?: AthenaStorageCallOptions): Promise<AthenaStorageFileUploadResult>
+  uploadMany(input: AthenaStorageFileUploadManyRequest, options?: AthenaStorageCallOptions): Promise<StorageBatchUploadUrlResponseWithPut>
+  confirmUpload(fileId: string, input?: ConfirmStorageUploadRequest, options?: AthenaStorageCallOptions): Promise<StorageFileMutationResponse>
+  uploadBinary(fileId: string, body: AthenaStoragePutBody, options?: AthenaStorageCallOptions): Promise<StorageFileMutationResponse>
+  search(input: SearchStorageFilesRequest, options?: AthenaStorageCallOptions): Promise<StorageListFilesResponse>
+  get(fileId: string, options?: AthenaStorageCallOptions): Promise<StorageFileMutationResponse>
+  update(fileId: string, input: UpdateStorageFileRequest, options?: AthenaStorageCallOptions): Promise<StorageFileMutationResponse>
   download(fileId: string, query?: GetStorageFileUrlQuery, options?: AthenaStorageBinaryCallOptions): Promise<Response>
   download(fileIds: readonly string[], query?: GetStorageFileUrlQuery, options?: AthenaStorageBinaryCallOptions): Promise<Response[]>
   list(input: AthenaStorageFileListInput, options?: AthenaStorageCallOptions): Promise<StorageListFilesResponse>
   delete(fileId: string, options?: AthenaStorageCallOptions): Promise<StorageFileMutationResponse>
   delete(fileIds: readonly string[], options?: AthenaStorageCallOptions): Promise<StorageFileMutationResponse[]>
+  deleteMany(input: DeleteManyStorageFilesRequest, options?: AthenaStorageCallOptions): Promise<StorageFileMutationManyResponse>
+  updateMany(input: UpdateManyStorageFilesRequest, options?: AthenaStorageCallOptions): Promise<StorageFileMutationManyResponse>
+  restore(fileId: string, options?: AthenaStorageCallOptions): Promise<StorageFileMutationResponse>
+  purge(fileId: string, options?: AthenaStorageCallOptions): Promise<StorageFileMutationResponse>
+  copy(fileId: string, input: CopyStorageFileRequest, options?: AthenaStorageCallOptions): Promise<StorageFileMutationResponse>
+  url(fileId: string, query?: GetStorageFileUrlQuery, options?: AthenaStorageCallOptions): Promise<PresignedFileUrlResponse>
+  publicUrl(fileId: string, options?: AthenaStorageCallOptions): Promise<Record<string, unknown>>
+  proxyUrl(fileId: string, query?: GetStorageFileUrlQuery, options?: AthenaStorageCallOptions): Promise<Record<string, unknown>>
+  proxy(fileId: string, query?: GetStorageFileUrlQuery, options?: AthenaStorageBinaryCallOptions): Promise<Response>
+  versions(fileId: string, options?: AthenaStorageCallOptions): Promise<Record<string, unknown>>
+  restoreVersion(fileId: string, versionId: string, options?: AthenaStorageCallOptions): Promise<Record<string, unknown>>
+  deleteVersion(fileId: string, versionId: string, options?: AthenaStorageCallOptions): Promise<Record<string, unknown>>
+  retention: {
+    get(fileId: string, query?: Pick<StorageFileRetentionRequest, "version_id">, options?: AthenaStorageCallOptions): Promise<Record<string, unknown>>
+    set(fileId: string, input: StorageFileRetentionRequest, options?: AthenaStorageCallOptions): Promise<Record<string, unknown>>
+  }
+  visibility: {
+    update(fileId: string, input: SetStorageFileVisibilityRequest, options?: AthenaStorageCallOptions): Promise<StorageFileMutationResponse>
+    set(fileId: string, input: SetStorageFileVisibilityRequest, options?: AthenaStorageCallOptions): Promise<StorageFileMutationResponse>
+    setMany(input: SetManyStorageFileVisibilityRequest, options?: AthenaStorageCallOptions): Promise<StorageFileMutationManyResponse>
+  }
+}
+
+interface AthenaStorageFolderNamespace {
+  list(input: ListStorageFoldersRequest, options?: AthenaStorageCallOptions): Promise<Record<string, unknown>>
+  tree(input: TreeStorageFoldersRequest, options?: AthenaStorageCallOptions): Promise<Record<string, unknown>>
+  delete(input: DeleteStorageFolderRequest, options?: AthenaStorageCallOptions): Promise<StorageFolderMutationResponse>
+  move(input: MoveStorageFolderRequest, options?: AthenaStorageCallOptions): Promise<StorageFolderMutationResponse>
+}
+
+interface AthenaStoragePermissionNamespace {
+  list(input: StoragePermissionListRequest, options?: AthenaStorageCallOptions): Promise<StoragePermissionListResponse>
+  grant(input: StoragePermissionGrantRequest, options?: AthenaStorageCallOptions): Promise<Record<string, unknown>>
+  revoke(input: StoragePermissionRevokeRequest, options?: AthenaStorageCallOptions): Promise<Record<string, unknown>>
+  check(input: StoragePermissionCheckRequest, options?: AthenaStorageCallOptions): Promise<StoragePermissionCheckResponse>
+}
+
+interface AthenaStorageObjectNamespace {
+  list(input: StorageListObjectsRequest, options?: AthenaStorageCallOptions): Promise<Record<string, unknown>>
+  head(input: StorageObjectRequest, options?: AthenaStorageCallOptions): Promise<Record<string, unknown>>
+  exists(input: StorageObjectRequest, options?: AthenaStorageCallOptions): Promise<Record<string, unknown>>
+  validate(input: StorageObjectValidateRequest, options?: AthenaStorageCallOptions): Promise<Record<string, unknown>>
+  update(input: StorageUpdateObjectRequest, options?: AthenaStorageCallOptions): Promise<Record<string, unknown>>
+  copy(input: StorageObjectCopyRequest, options?: AthenaStorageCallOptions): Promise<Record<string, unknown>>
+  url(input: StorageObjectRequest, options?: AthenaStorageCallOptions): Promise<Record<string, unknown>>
+  publicUrl(input: StorageObjectPublicUrlRequest, options?: AthenaStorageCallOptions): Promise<Record<string, unknown>>
+  delete(input: StorageObjectRequest, options?: AthenaStorageCallOptions): Promise<Record<string, unknown>>
+  uploadUrl(input: StoragePresignUploadRequest, options?: AthenaStorageCallOptions): Promise<Record<string, unknown>>
+  postPolicy(input: StorageSignedPostPolicyRequest, options?: AthenaStorageCallOptions): Promise<Record<string, unknown>>
+  versions(input: StorageObjectVersionListRequest, options?: AthenaStorageCallOptions): Promise<Record<string, unknown>>
+  restoreVersion(input: StorageObjectVersionMutationRequest, options?: AthenaStorageCallOptions): Promise<Record<string, unknown>>
+  deleteVersion(input: StorageObjectVersionMutationRequest, options?: AthenaStorageCallOptions): Promise<Record<string, unknown>>
+  folder: {
+    create(input: StorageObjectFolderCreateRequest, options?: AthenaStorageCallOptions): Promise<Record<string, unknown>>
+    delete(input: StorageObjectFolderDeleteRequest, options?: AthenaStorageCallOptions): Promise<Record<string, unknown>>
+    rename(input: StorageObjectFolderRenameRequest, options?: AthenaStorageCallOptions): Promise<Record<string, unknown>>
+  }
+}
+
+interface AthenaStorageBucketNamespace {
+  list(input: Omit<StorageObjectBaseRequest, "bucket">, options?: AthenaStorageCallOptions): Promise<Record<string, unknown>>
+  create(input: StorageObjectBaseRequest, options?: AthenaStorageCallOptions): Promise<Record<string, unknown>>
+  delete(input: StorageObjectBaseRequest, options?: AthenaStorageCallOptions): Promise<Record<string, unknown>>
+  lifecycle: {
+    get(input: StorageBucketLifecycleRequest, options?: AthenaStorageCallOptions): Promise<Record<string, unknown>>
+    set(input: StorageSetBucketLifecycleRequest, options?: AthenaStorageCallOptions): Promise<Record<string, unknown>>
+    delete(input: StorageBucketLifecycleRequest, options?: AthenaStorageCallOptions): Promise<Record<string, unknown>>
+  }
+  policy: {
+    get(input: StorageBucketPolicyRequest, options?: AthenaStorageCallOptions): Promise<Record<string, unknown>>
+    set(input: StorageSetBucketPolicyRequest, options?: AthenaStorageCallOptions): Promise<Record<string, unknown>>
+    delete(input: StorageBucketPolicyRequest, options?: AthenaStorageCallOptions): Promise<Record<string, unknown>>
+  }
+  publicAccess: {
+    get(input: StoragePublicAccessBlockRequest, options?: AthenaStorageCallOptions): Promise<Record<string, unknown>>
+    set(input: StorageSetPublicAccessBlockRequest, options?: AthenaStorageCallOptions): Promise<Record<string, unknown>>
+    delete(input: StoragePublicAccessBlockRequest, options?: AthenaStorageCallOptions): Promise<Record<string, unknown>>
+  }
+  cors: {
+    get(input: StorageBucketCorsRequest, options?: AthenaStorageCallOptions): Promise<Record<string, unknown>>
+    set(input: StorageSetBucketCorsRequest, options?: AthenaStorageCallOptions): Promise<Record<string, unknown>>
+    delete(input: StorageBucketCorsRequest, options?: AthenaStorageCallOptions): Promise<Record<string, unknown>>
+  }
+}
+
+interface AthenaStorageMultipartNamespace {
+  create(input: StorageMultipartCreateRequest, options?: AthenaStorageCallOptions): Promise<Record<string, unknown>>
+  signPart(input: StorageMultipartSignPartRequest, options?: AthenaStorageCallOptions): Promise<Record<string, unknown>>
+  complete(input: StorageMultipartCompleteRequest, options?: AthenaStorageCallOptions): Promise<StorageFileMutationResponse>
+  abort(input: StorageMultipartAbortRequest, options?: AthenaStorageCallOptions): Promise<Record<string, unknown>>
+  listParts(input: StorageMultipartListPartsRequest, options?: AthenaStorageCallOptions): Promise<Record<string, unknown>>
+}
+
+interface AthenaStorageAuditNamespace {
+  list(input: StorageAuditQueryRequest, options?: AthenaStorageCallOptions): Promise<StorageAuditListResponse>
 }
 ```
 
@@ -651,7 +761,9 @@ function createAthenaStorageError(input: AthenaStorageErrorInput): AthenaStorage
 
 Raw JSON storage endpoints return the parsed response body. Athena-envelope storage endpoints unwrap `{ status, message, data }` and return `data`. `getStorageFileProxy(...)` is the binary exception: it calls `GET /storage/files/{file_id}/proxy`, accepts the current proxy purposes (`"read"`, `"download"`, and `"stream"`) through the same query shape as `getStorageFileUrl(...)`, and returns the untouched `Response` so callers can read headers such as `Content-Type`, `Content-Disposition`, `Content-Length`, `ETag`, and `Cache-Control` before choosing `.blob()`, `.arrayBuffer()`, `.text()`, or streaming.
 
-The `file.*` helpers are convenience wrappers over the managed storage routes. `file.upload(...)` validates `maxFiles`, `extensions`/`allowedExtensions`, and `maxFileSizeMb`/`maxFileSizeBytes`, creates one or more upload URLs, uploads with XHR progress in browsers, and returns uploaded file records. `experimental.storage.prefixPath` is prepended by `file.upload(...)` and `file.list(...)`; templates can use values such as `{organization_id}`, `{organizationId}`, `{user_id}`, `{resource_id}`, `{env.APP_ENV}`, or `${APP_ENV}`.
+The `file.*` helpers cover the managed storage workflow end to end: presigned upload prep, optional direct byte upload, upload confirmation, search, batch mutation helpers, version and retention helpers, and the visibility aliases. `file.visibility.update(...)` uses the compatibility `PATCH /storage/files/{file_id}/visibility` route, `file.visibility.set(...)` uses the canonical `POST` variant on the same path, and `file.visibility.setMany(...)` targets `POST /storage/files/visibility-many`. `experimental.storage.prefixPath` is prepended by `file.upload(...)` and `file.list(...)`; templates can use values such as `{organization_id}`, `{organizationId}`, `{user_id}`, `{resource_id}`, `{env.APP_ENV}`, or `${APP_ENV}`.
+
+The grouped `folder`, `permission`, `object`, `bucket`, `multipart`, and `audit` namespaces mirror the current Athena storage route families. For the route-by-route matrix and examples, use [`storage/index.md`](storage/index.md).
 
 React upload state is available from `useStorageUpload(...)` in `@xylex-group/athena/react`. The hook returns `{ uploading, progress, percent, error, result, upload, abort, reset }` and calls through to `athena.storage.file.upload(...)`.
 

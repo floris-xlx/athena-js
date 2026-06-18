@@ -87,6 +87,7 @@ These are the methods currently exposed by `AthenaStorageModule`.
 | `deleteStorageFolder(input)` | `POST /storage/folders/delete` | Athena envelope | `StorageFolderMutationResponse` | Delete every managed file below a prefix. |
 | `moveStorageFolder(input)` | `POST /storage/folders/move` | Athena envelope | `StorageFolderMutationResponse` | Move every managed file below one prefix to another prefix. |
 | `file.upload(input)` | `POST /storage/files/upload-url` or `/upload-urls`, then presigned `PUT` | Athena envelope + binary upload | `AthenaStorageFileUploadResult` | Validate local files, create managed upload URLs, upload bytes, and report progress. |
+| `file.confirmUpload(fileId, input?)` / `file.uploadBinary(fileId, body)` | `POST /storage/files/{file_id}/confirm-upload` / `PUT /storage/files/{file_id}/upload` | Athena envelope | `StorageFileMutationResponse` | Finalize a managed upload or tunnel one binary upload through Athena directly. |
 | `file.download(fileId, query)` | `GET /storage/files/{file_id}/proxy` | Raw binary response | `Response` | Download or stream one managed file through Athena authorization. |
 | `file.download(fileIds, query)` | `GET /storage/files/{file_id}/proxy` per id | Raw binary response | `Response[]` | Download or stream multiple managed files. |
 | `file.list(input)` | `POST /storage/files/list` | Athena envelope | `StorageListFilesResponse` | List managed files under the configured prefix path. |
@@ -95,12 +96,15 @@ These are the methods currently exposed by `AthenaStorageModule`.
 | `delete(fileIdOrIds)` | Same as `file.delete(...)` | Athena envelope | `StorageFileMutationResponse` or array | Short alias for file deletion. |
 | `file.search(input)` | `POST /storage/files/search` | Athena envelope | `StorageListFilesResponse` | Search managed files with pagination and optional metadata/name/resource/status/visibility filters. |
 | `file.update(fileId, input)` / `file.updateMany(input)` | `PATCH /storage/files/{file_id}` / `POST /storage/files/update-many` | Athena envelope | `StorageFileMutationResponse` / `StorageFileMutationManyResponse` | Move files and/or patch mutable metadata fields. |
+| `file.deleteMany(input)` / `file.restore(fileId)` / `file.purge(fileId)` | `POST /storage/files/delete-many` / `POST /storage/files/{file_id}/restore` / `DELETE /storage/files/{file_id}/purge` | Athena envelope | `StorageFileMutationManyResponse` / `StorageFileMutationResponse` | Batch-delete, restore soft-deleted files, or purge one file permanently. |
 | `file.copy(fileId, input)` | `POST /storage/files/{file_id}/copy` | Athena envelope | `StorageFileMutationResponse` | Copy a managed file, with optional server-side encryption headers. |
-| `file.proxyUrl(fileId, query)` | `GET /storage/files/{file_id}/proxy-url` | Athena envelope | `Record<string, unknown>` | Resolve the Athena proxy URL string for a managed file. |
+| `file.publicUrl(fileId)` / `file.proxyUrl(fileId, query)` | `GET /storage/files/{file_id}/public-url` / `GET /storage/files/{file_id}/proxy-url` | Athena envelope | `Record<string, unknown>` | Resolve the configured public URL or the Athena proxy URL without streaming bytes yet. |
 | `file.versions(fileId)` | `GET /storage/files/{file_id}/versions` | Athena envelope | `Record<string, unknown>` | List S3 object versions for a managed file. |
 | `file.restoreVersion(fileId, versionId)` | `POST /storage/files/{file_id}/versions/{version_id}/restore` | Athena envelope | `Record<string, unknown>` | Restore a managed file object version. |
 | `file.deleteVersion(fileId, versionId)` | `DELETE /storage/files/{file_id}/versions/{version_id}` | Athena envelope | `Record<string, unknown>` | Delete a managed file object version. |
 | `file.retention.get(fileId, query)` / `file.retention.set(fileId, input)` | `GET/POST /storage/files/{file_id}/retention` | Athena envelope | `Record<string, unknown>` | Read or set S3 object-lock retention for a managed file. |
+| `file.visibility.update(fileId, input)` / `file.visibility.set(fileId, input)` / `file.visibility.setMany(input)` | `PATCH /storage/files/{file_id}/visibility` / `POST /storage/files/{file_id}/visibility` / `POST /storage/files/visibility-many` | Athena envelope | `StorageFileMutationResponse` / `StorageFileMutationManyResponse` | Use the PATCH compatibility alias, the canonical POST setter, or the bulk visibility mutation route. |
+| `folder.list(input)` / `folder.tree(input)` | `POST /storage/folders/list` / `POST /storage/folders/tree` | Athena envelope | `Record<string, unknown>` | List folders below a prefix or return a hierarchical tree view. |
 | `object.*` | `POST /storage/objects/*` | Athena envelope | `Record<string, unknown>` | Raw object list/head/exists/validate/update/copy/url/public-url/delete/upload-url/version/post-policy operations. |
 | `bucket.*` | `POST /storage/buckets/*` | Athena envelope | `Record<string, unknown>` | Raw bucket list/create/delete plus lifecycle, policy, public-access, and CORS operations. |
 | `multipart.*` | `POST /storage/multipart/*` | Athena envelope | `Record<string, unknown>` or `StorageFileMutationResponse` | Managed multipart create/sign-part/complete/abort/list-parts operations. |
@@ -574,6 +578,15 @@ Toggle visibility:
 ```ts
 await athena.storage.setStorageFileVisibility("file_1", {
   public: true,
+})
+
+await athena.storage.file.visibility.set("file_1", {
+  visibility: "organization",
+})
+
+await athena.storage.file.visibility.setMany({
+  file_ids: ["file_1", "file_2"],
+  public: false,
 })
 ```
 

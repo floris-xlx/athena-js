@@ -183,34 +183,76 @@ All admin endpoints are server-authorized; the server enforces role/permission c
 
 #### Managed file/catalog bindings
 
-- `client.storage.credentials.list()` -> `GET /storage/credentials`
-- `client.storage.catalog.list()` -> `GET /storage/catalogs`
-- `client.storage.catalog.create()` -> `POST /storage/catalogs`
-- `client.storage.catalog.update()` -> `PATCH /storage/catalogs/{id}`
-- `client.storage.catalog.delete()` -> `DELETE /storage/catalogs/{id}`
+- `client.storage.listStorageCatalogs()` -> `GET /storage/catalogs`
+- `client.storage.createStorageCatalog()` -> `POST /storage/catalogs`
+- `client.storage.updateStorageCatalog()` -> `PATCH /storage/catalogs/{id}`
+- `client.storage.deleteStorageCatalog()` -> `DELETE /storage/catalogs/{id}`
+- `client.storage.listStorageCredentials()` -> `GET /storage/credentials`
 
-- `client.storage.file.upload()` -> `POST /storage/files/upload-url`
+- `client.storage.createStorageUploadUrl()` -> `POST /storage/files/upload-url`
+- `client.storage.createStorageUploadUrls()` -> `POST /storage/files/upload-urls`
+- `client.storage.listStorageFiles()` -> `POST /storage/files/list`
+- `client.storage.getStorageFile()` -> `GET /storage/files/{file_id}`
+- `client.storage.updateStorageFile()` -> `PATCH /storage/files/{file_id}`
+- `client.storage.deleteStorageFile()` -> `DELETE /storage/files/{file_id}`
+- `client.storage.getStorageFileUrl()` -> `GET /storage/files/{file_id}/url`
+- `client.storage.getStorageFileProxy()` -> `GET /storage/files/{file_id}/proxy`
+- `client.storage.setStorageFileVisibility()` -> `PATCH /storage/files/{file_id}/visibility`
+- `client.storage.deleteStorageFolder()` -> `POST /storage/folders/delete`
+- `client.storage.moveStorageFolder()` -> `POST /storage/folders/move`
+
+- `client.storage.file.upload()` -> `POST /storage/files/upload-url` or `POST /storage/files/upload-urls`, followed by presigned `PUT`
 - `client.storage.file.uploadMany()` -> `POST /storage/files/upload-urls`
-- `client.storage.file.list()` -> `POST /storage/files/list`
+- `client.storage.file.confirmUpload()` -> `POST /storage/files/{file_id}/confirm-upload`
+- `client.storage.file.uploadBinary()` -> `PUT /storage/files/{file_id}/upload`
+- `client.storage.file.search()` -> `POST /storage/files/search`
 - `client.storage.file.get()` -> `GET /storage/files/{file_id}`
 - `client.storage.file.update()` -> `PATCH /storage/files/{file_id}`
 - `client.storage.file.delete()` -> `DELETE /storage/files/{file_id}`
+- `client.storage.file.deleteMany()` -> `POST /storage/files/delete-many`
+- `client.storage.file.updateMany()` -> `POST /storage/files/update-many`
+- `client.storage.file.restore()` -> `POST /storage/files/{file_id}/restore`
+- `client.storage.file.purge()` -> `DELETE /storage/files/{file_id}/purge`
+- `client.storage.file.copy()` -> `POST /storage/files/{file_id}/copy`
 - `client.storage.file.url()` -> `GET /storage/files/{file_id}/url`
+- `client.storage.file.publicUrl()` -> `GET /storage/files/{file_id}/public-url`
+- `client.storage.file.proxyUrl()` -> `GET /storage/files/{file_id}/proxy-url`
 - `client.storage.file.proxy()` -> `GET /storage/files/{file_id}/proxy`
+- `client.storage.file.versions()` -> `GET /storage/files/{file_id}/versions`
+- `client.storage.file.restoreVersion()` -> `POST /storage/files/{file_id}/versions/{version_id}/restore`
+- `client.storage.file.deleteVersion()` -> `DELETE /storage/files/{file_id}/versions/{version_id}`
+- `client.storage.file.retention.get()` -> `GET /storage/files/{file_id}/retention`
+- `client.storage.file.retention.set()` -> `POST /storage/files/{file_id}/retention`
 - `client.storage.file.visibility.update()` -> `PATCH /storage/files/{file_id}/visibility`
 - `client.storage.file.visibility.set()` -> `POST /storage/files/{file_id}/visibility`
+- `client.storage.file.visibility.setMany()` -> `POST /storage/files/visibility-many`
 
+- `client.storage.folder.list()` -> `POST /storage/folders/list`
+- `client.storage.folder.tree()` -> `POST /storage/folders/tree`
 - `client.storage.folder.delete()` -> `POST /storage/folders/delete`
 - `client.storage.folder.move()` -> `POST /storage/folders/move`
+
+- `client.storage.permission.list()` -> `POST /storage/permissions/list`
+- `client.storage.permission.grant()` -> `POST /storage/permissions/grant`
+- `client.storage.permission.revoke()` -> `POST /storage/permissions/revoke`
+- `client.storage.permission.check()` -> `POST /storage/permissions/check`
 
 #### Raw S3-compatible object bindings
 
 - `client.storage.object.list()` -> `POST /storage/objects`
 - `client.storage.object.head()` -> `POST /storage/objects/head`
+- `client.storage.object.exists()` -> `POST /storage/objects/exists`
+- `client.storage.object.validate()` -> `POST /storage/objects/validate`
 - `client.storage.object.update()` -> `POST /storage/objects/update`
+- `client.storage.object.copy()` -> `POST /storage/objects/copy`
 - `client.storage.object.url()` -> `POST /storage/objects/url`
+- `client.storage.object.publicUrl()` -> `POST /storage/objects/public-url`
 - `client.storage.object.delete()` -> `POST /storage/objects/delete`
 - `client.storage.object.uploadUrl()` -> `POST /storage/objects/upload-url`
+- `client.storage.object.postPolicy()` -> `POST /storage/objects/post-policy`
+- `client.storage.object.versions()` -> `POST /storage/objects/versions`
+- `client.storage.object.restoreVersion()` -> `POST /storage/objects/versions/restore`
+- `client.storage.object.deleteVersion()` -> `POST /storage/objects/versions/delete`
 
 - `client.storage.object.folder.create()` -> `POST /storage/objects/folder`
 - `client.storage.object.folder.delete()` -> `POST /storage/objects/folder/delete`
@@ -221,33 +263,26 @@ All admin endpoints are server-authorized; the server enforces role/permission c
 - `client.storage.bucket.list()` -> `POST /storage/buckets/list`
 - `client.storage.bucket.create()` -> `POST /storage/buckets/create`
 - `client.storage.bucket.delete()` -> `POST /storage/buckets/delete`
+- `client.storage.bucket.lifecycle.get()` -> `POST /storage/buckets/lifecycle`
+- `client.storage.bucket.lifecycle.set()` -> `POST /storage/buckets/lifecycle/set`
+- `client.storage.bucket.lifecycle.delete()` -> `POST /storage/buckets/lifecycle/delete`
+- `client.storage.bucket.policy.get()` -> `POST /storage/buckets/policy`
+- `client.storage.bucket.policy.set()` -> `POST /storage/buckets/policy/set`
+- `client.storage.bucket.policy.delete()` -> `POST /storage/buckets/policy/delete`
+- `client.storage.bucket.publicAccess.get()` -> `POST /storage/buckets/public-access`
+- `client.storage.bucket.publicAccess.set()` -> `POST /storage/buckets/public-access/set`
+- `client.storage.bucket.publicAccess.delete()` -> `POST /storage/buckets/public-access/delete`
 - `client.storage.bucket.cors.get()` -> `POST /storage/buckets/cors`
 - `client.storage.bucket.cors.set()` -> `POST /storage/buckets/cors/set`
 - `client.storage.bucket.cors.delete()` -> `POST /storage/buckets/cors/delete`
 
-### Missing storage API coverage
+- `client.storage.multipart.create()` -> `POST /storage/multipart/create`
+- `client.storage.multipart.signPart()` -> `POST /storage/multipart/sign-part`
+- `client.storage.multipart.complete()` -> `POST /storage/multipart/complete`
+- `client.storage.multipart.abort()` -> `POST /storage/multipart/abort`
+- `client.storage.multipart.listParts()` -> `POST /storage/multipart/list-parts`
 
-- Direct binary upload endpoint, e.g. `PUT/POST /storage/files/{file_id}/upload` or multipart upload support. Current flow only returns presigned upload URLs.
-- Multipart uploads: create multipart upload, sign part URLs, complete multipart upload, abort multipart upload, list uploaded parts.
-- Copy single file/object endpoint. Rename/move exists for managed files and folders, but explicit copy/duplicate is missing.
-- Batch delete files by IDs.
-- Batch update metadata/visibility.
-- File permission endpoints: grant/revoke/list access for user, organization, team, role.
-- Public URL endpoint that returns Athena proxy URL or public route, not only presigned S3 URLs.
-- Download/proxy range support contract for video/audio streaming, including `Range` headers.
-- File search endpoint by metadata/name/resource_id/mime/status, not only prefix listing.
-- Pagination for managed file list: `limit`, `cursor`/`offset`.
-- Folder listing/tree endpoint returning folders + files, not only file rows under prefix.
-- Confirm-upload/finalize endpoint to mark uploaded files as complete after PUT succeeds.
-- Object existence/checksum validation endpoint.
-- Soft-delete restore endpoint.
-- Permanent purge endpoint.
-- Versioning support: list versions, restore version, delete version.
-- Lifecycle/retention APIs.
-- Bucket policy/public access APIs.
-- Signed POST policy support for browser uploads.
-- Server-side encryption options.
-- Audit/event listing endpoints for storage operations.
+- `client.storage.audit.list()` -> `POST /storage/audit/list`
 
 
 ### OAuth callback bindings

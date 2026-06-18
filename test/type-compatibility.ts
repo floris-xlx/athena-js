@@ -51,6 +51,7 @@ import {
   type AthenaStorageFileUploadResult,
   type S3CatalogItem,
   type StorageFileAccessPurpose,
+  type StorageFileMutationManyResponse,
   type StorageFileMutationResponse,
   type StorageListFilesResponse,
   type StorageObjectValidateRequest,
@@ -119,6 +120,9 @@ declare function acceptsStorageListFilesPromise(
 ): void
 declare function acceptsStorageFileMutationPromise(
   value: Promise<StorageFileMutationResponse>,
+): void
+declare function acceptsStorageFileMutationManyPromise(
+  value: Promise<StorageFileMutationManyResponse>,
 ): void
 declare function acceptsResponseArrayPromise(value: Promise<Response[]>): void
 declare function acceptsStorageSseOptions(value: StorageServerSideEncryptionOptions): void
@@ -347,6 +351,18 @@ acceptsResponsePromise(experimentalStorageClient.storage.file.download('file_1')
 acceptsResponseArrayPromise(experimentalStorageClient.storage.file.download(['file_1', 'file_2']))
 acceptsStorageFileMutationPromise(experimentalStorageClient.storage.file.delete('file_1'))
 acceptsStorageFileMutationPromise(experimentalStorageClient.storage.delete('file_1'))
+acceptsStorageFileMutationPromise(
+  experimentalStorageClient.storage.file.visibility.update('file_1', { public: true }),
+)
+acceptsStorageFileMutationPromise(
+  experimentalStorageClient.storage.file.visibility.set('file_1', { visibility: 'organization' }),
+)
+acceptsStorageFileMutationManyPromise(
+  experimentalStorageClient.storage.file.visibility.setMany({
+    file_ids: ['file_1'],
+    public: true,
+  }),
+)
 acceptsUnknown(experimentalStorageClient.storage.file.proxyUrl('file_1', { purpose: 'download' }))
 acceptsUnknown(experimentalStorageClient.storage.file.versions('file_1'))
 acceptsUnknown(experimentalStorageClient.storage.file.restoreVersion('file_1', 'version_1'))
