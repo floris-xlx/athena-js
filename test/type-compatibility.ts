@@ -29,6 +29,11 @@ import {
   unwrapRows,
   verifyAthenaGatewayUrl,
   AthenaStorageErrorCode,
+  ATHENA_AUTH_ADMIN_LIMITS,
+  ATHENA_AUTH_MAX_ADMIN_JSON_BYTES,
+  ATHENA_AUTH_MAX_ADMIN_JSON_DEPTH,
+  ATHENA_AUTH_MAX_TEMPLATE_VARIABLES,
+  ATHENA_AUTH_MAX_TEMPLATE_VARIABLE_LENGTH,
   createAthenaStorageError,
   type RequireAffectedOptions,
   type AthenaResult,
@@ -43,6 +48,9 @@ import {
   type AthenaAdminListUsersQuery,
   type AthenaAdminListUsersSearchOperator,
   type AthenaAdminListUsersFilterOperator,
+  type AthenaAdminEmailTemplateCreateRequest,
+  type AthenaAdminEmailTemplateUpdateRequest,
+  type AthenaAuthAdminLimits,
   type AthenaStorageModule,
   type AthenaStorageBinaryCallOptions,
   type AthenaStorageClientConfig,
@@ -132,6 +140,13 @@ declare function acceptsStorageLifecycleRequest(value: StorageSetBucketLifecycle
 declare function acceptsStorageBucketPolicyRequest(value: StorageSetBucketPolicyRequest): void
 declare function acceptsStoragePublicAccessRequest(value: StorageSetPublicAccessBlockRequest): void
 declare function acceptsStorageRetentionRequest(value: StorageFileRetentionRequest): void
+declare function acceptsAuthAdminLimits(value: AthenaAuthAdminLimits): void
+declare function acceptsAdminTemplateCreateRequest(
+  value: AthenaAdminEmailTemplateCreateRequest,
+): void
+declare function acceptsAdminTemplateUpdateRequest(
+  value: AthenaAdminEmailTemplateUpdateRequest,
+): void
 
 declare function acceptsUserInsertMutation(
   value: PromiseLike<AthenaResult<UserRow>>,
@@ -142,6 +157,19 @@ declare function acceptsUserArrayInsertMutation(
 declare const envString: string | undefined
 
 const client = createClient("https://mirror3.athena-db.com", "api-key")
+acceptsAuthAdminLimits(ATHENA_AUTH_ADMIN_LIMITS)
+acceptsNumber(ATHENA_AUTH_MAX_ADMIN_JSON_BYTES)
+acceptsNumber(ATHENA_AUTH_MAX_ADMIN_JSON_DEPTH)
+acceptsNumber(ATHENA_AUTH_MAX_TEMPLATE_VARIABLES)
+acceptsNumber(ATHENA_AUTH_MAX_TEMPLATE_VARIABLE_LENGTH)
+acceptsAdminTemplateCreateRequest({
+  templateKey: 'welcome',
+  subjectTemplate: 'Welcome to Athena',
+})
+acceptsAdminTemplateUpdateRequest({
+  id: 'tmpl_1',
+  subjectTemplate: 'Updated subject',
+})
 const publicBaseClient = createClient({
   url: 'https://mirror3.athena-db.com',
   key: 'api-key',

@@ -43,6 +43,7 @@ Behavior:
 - set `includePlainText: false` to skip auto text generation
 - `react` is never forwarded to the backend route body
 - on template routes, `variables` is auto-derived from `Object.keys(react.props)` when `variables` is omitted
+- template routes reject more than `64` variables or variable names longer than `128` characters
 
 ## Ergonomic template builder
 
@@ -177,6 +178,12 @@ await client.auth.admin.email.template.update({
 })
 
 // variables is auto-filled as: ["dashboardUrl", "name"]
+```
+
+If you need the exact server-side limits in app code, import them from the SDK:
+
+```ts
+import { ATHENA_AUTH_ADMIN_LIMITS } from "@xylex-group/athena"
 ```
 
 ## Example: Layout-based component (your pattern)

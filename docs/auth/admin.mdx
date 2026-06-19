@@ -56,7 +56,16 @@ react: {
 
 When `react` is present, the SDK renders `element` to `htmlBody` or `htmlTemplate` before sending.
 For template routes, `variables` is auto-derived from `react.props` when omitted.
+For template routes, the SDK rejects payloads with more than `64` variables or variable names longer than `128` characters.
 For reusable flows, prefer `defineAuthEmailTemplate(...)` from the root SDK export.
+
+The backend limit constants are also exported from the SDK:
+
+- `ATHENA_AUTH_ADMIN_LIMITS`
+- `ATHENA_AUTH_MAX_ADMIN_JSON_BYTES`
+- `ATHENA_AUTH_MAX_ADMIN_JSON_DEPTH`
+- `ATHENA_AUTH_MAX_TEMPLATE_VARIABLES`
+- `ATHENA_AUTH_MAX_TEMPLATE_VARIABLE_LENGTH`
 
 ## Examples
 

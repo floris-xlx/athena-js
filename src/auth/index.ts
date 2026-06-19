@@ -1,5 +1,12 @@
 export { createAuthClient } from './client.ts'
 export {
+  ATHENA_AUTH_ADMIN_LIMITS,
+  ATHENA_AUTH_MAX_ADMIN_JSON_BYTES,
+  ATHENA_AUTH_MAX_ADMIN_JSON_DEPTH,
+  ATHENA_AUTH_MAX_TEMPLATE_VARIABLES,
+  ATHENA_AUTH_MAX_TEMPLATE_VARIABLE_LENGTH,
+} from './limits.ts'
+export {
   ATHENA_AUTH_BASE_ERROR_CODES,
   athenaAuth,
   defineAthenaAuthConfig,
@@ -61,6 +68,29 @@ export type {
   AthenaAuthEmailTemplateCreateFromDefinitionInput,
   AthenaAuthEmailTemplateUpdateFromDefinitionInput,
   AthenaAuthEmailTemplateBuilder,
+  AthenaAdminEmailListQuery,
+  AthenaAdminEmailListResponse,
+  AthenaAdminEmailGetQuery,
+  AthenaAdminEmailGetResponse,
+  AthenaAdminEmailCreateRequest,
+  AthenaAdminEmailUpdateRequest,
+  AthenaAdminEmailUpdateResponse,
+  AthenaAdminEmailDeleteRequest,
+  AthenaAdminEmailFailureListQuery,
+  AthenaAdminEmailFailureListResponse,
+  AthenaAdminEmailFailureGetQuery,
+  AthenaAdminEmailFailureGetResponse,
+  AthenaAdminEmailFailureCreateRequest,
+  AthenaAdminEmailFailureUpdateRequest,
+  AthenaAdminEmailFailureUpdateResponse,
+  AthenaAdminEmailFailureDeleteRequest,
+  AthenaAdminEmailTemplateListQuery,
+  AthenaAdminEmailTemplateListResponse,
+  AthenaAdminEmailTemplateCreateRequest,
+  AthenaAdminEmailTemplateUpdateRequest,
+  AthenaAdminEmailTemplateDeleteRequest,
+  AthenaAdminEmailTemplateGetQuery,
+  AthenaAdminEmailTemplateGetResponse,
   AthenaLinkSocialRequest,
   AthenaUnlinkAccountRequest,
   AthenaAuthSession,
@@ -78,6 +108,7 @@ export type {
   AthenaAdminListUsersFilterOperator,
   AthenaAdminListUsersQuery,
 } from './types.ts'
+export type { AthenaAuthAdminLimits } from './limits.ts'
 export type {
   AthenaAuthBaseURLConfig,
   AthenaAuthCookieRuntimeInput,

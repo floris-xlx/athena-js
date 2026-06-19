@@ -10,6 +10,11 @@ From `@xylex-group/athena`:
 - `createAuthReactEmailInput`
 - `defineAuthEmailTemplate`
 - `renderAthenaReactEmail`
+- `ATHENA_AUTH_ADMIN_LIMITS`
+- `ATHENA_AUTH_MAX_ADMIN_JSON_BYTES`
+- `ATHENA_AUTH_MAX_ADMIN_JSON_DEPTH`
+- `ATHENA_AUTH_MAX_TEMPLATE_VARIABLES`
+- `ATHENA_AUTH_MAX_TEMPLATE_VARIABLE_LENGTH`
 
 From `createClient(..., { auth })` config:
 
@@ -130,9 +135,36 @@ Event phases:
 For admin template routes, if `variables` is omitted and `react.props` exists:
 
 - `variables` is auto-derived from `Object.keys(react.props)`.
+- the SDK rejects payloads above `ATHENA_AUTH_MAX_TEMPLATE_VARIABLES`
+- the SDK rejects variable names above `ATHENA_AUTH_MAX_TEMPLATE_VARIABLE_LENGTH`
 
 For email + template routes:
 
 - `react` is removed from outbound API payload.
 - `htmlBody`/`htmlTemplate` is always rendered from `react`.
 - `textBody`/`textTemplate` is preserved if explicitly set; otherwise derived when possible.
+
+## Published backend limits
+
+The SDK now exports the current backend-admin limits so callers can align UI and validation with the server contract:
+
+```ts
+import {
+  ATHENA_AUTH_ADMIN_LIMITS,
+  ATHENA_AUTH_MAX_ADMIN_JSON_BYTES,
+  ATHENA_AUTH_MAX_ADMIN_JSON_DEPTH,
+  ATHENA_AUTH_MAX_TEMPLATE_VARIABLES,
+  ATHENA_AUTH_MAX_TEMPLATE_VARIABLE_LENGTH,
+} from "@xylex-group/athena"
+```
+
+Current values:
+
+- `ATHENA_AUTH_MAX_ADMIN_JSON_BYTES` -> `32768`
+- `ATHENA_AUTH_MAX_ADMIN_JSON_DEPTH` -> `8`
+- `ATHENA_AUTH_MAX_TEMPLATE_VARIABLES` -> `64`
+- `ATHENA_AUTH_MAX_TEMPLATE_VARIABLE_LENGTH` -> `128`
+
+`ATHENA_AUTH_ADMIN_LIMITS` bundles the same values into one object.  
+The SDK currently enforces the template-variable limits on admin email-template requests.  
+The JSON byte/depth limits are published for parity with the backend contract without guessing a broad client-side rejection seam.

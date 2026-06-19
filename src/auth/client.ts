@@ -71,6 +71,7 @@ import type {
   AthenaVerifyEmailRequest,
   AthenaUsernameSignInRequest,
 } from './types.ts'
+import { assertAthenaAuthTemplateVariables } from './limits.ts'
 import { resolveReactEmailPayloadFields } from './react-email.ts'
 import { buildSdkHeaderValue } from '../sdk-version.ts'
 
@@ -585,7 +586,15 @@ export function createAuthClient(config: AthenaAuthClientConfig = {}): AthenaAut
       htmlField: 'htmlTemplate',
       textField: 'textTemplate',
       variablesField: 'variables',
-    }, withReactEmailRoute(route))
+    }, withReactEmailRoute(route)).then(payload => {
+      if ('variables' in payload && payload.variables !== undefined && payload.variables !== null) {
+        assertAthenaAuthTemplateVariables(
+          payload.variables,
+          `${route} variables`,
+        )
+      }
+      return payload
+    })
 
   const listUserEmailsWithFallback: AthenaAuthBindings['user']['email']['list'] = async (input, options) => {
     const primary = await getWithQuery<AthenaAuthEmailListResponse, AthenaAuthEmailListQuery>(

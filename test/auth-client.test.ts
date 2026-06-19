@@ -4,6 +4,11 @@ import { Body, Html, Text } from '@react-email/components'
 import { createElement } from 'react'
 import packageJson from '../package.json' with { type: 'json' }
 import {
+  ATHENA_AUTH_ADMIN_LIMITS,
+  ATHENA_AUTH_MAX_ADMIN_JSON_BYTES,
+  ATHENA_AUTH_MAX_ADMIN_JSON_DEPTH,
+  ATHENA_AUTH_MAX_TEMPLATE_VARIABLES,
+  ATHENA_AUTH_MAX_TEMPLATE_VARIABLE_LENGTH,
   createAuthClient,
   defineAuthEmailTemplate,
   renderAthenaReactEmail,
@@ -52,6 +57,23 @@ function NewLoginDemoTemplate(props: { dashboardUrl: string; name?: string }) {
     ),
   )
 }
+
+function DynamicVariableTemplate(props: Record<string, string>) {
+  return buildReactEmailElement(Object.values(props)[0] ?? 'Athena')
+}
+
+test('auth admin limits stay aligned with backend constants', () => {
+  assert.equal(ATHENA_AUTH_MAX_ADMIN_JSON_BYTES, 32 * 1024)
+  assert.equal(ATHENA_AUTH_MAX_ADMIN_JSON_DEPTH, 8)
+  assert.equal(ATHENA_AUTH_MAX_TEMPLATE_VARIABLES, 64)
+  assert.equal(ATHENA_AUTH_MAX_TEMPLATE_VARIABLE_LENGTH, 128)
+  assert.deepEqual(ATHENA_AUTH_ADMIN_LIMITS, {
+    maxAdminJsonBytes: 32 * 1024,
+    maxAdminJsonDepth: 8,
+    maxTemplateVariables: 64,
+    maxTemplateVariableLength: 128,
+  })
+})
 
 test('createClient exposes auth namespace and routes auth calls to configured auth base URL', async () => {
   const { calls, restore } = mockFetch({
@@ -723,6 +745,57 @@ test('auth.admin.email.create renders react email payload into htmlBody/textBody
     assert.equal(typeof body.textBody, 'string')
     assert.equal(body.textBody.includes('Welcome to Athena'), true)
     assert.equal(Object.hasOwn(body, 'react'), false)
+  } finally {
+    restore()
+  }
+})
+
+test('auth admin email-template routes reject variables above the published SDK limits', async () => {
+  const { calls, restore } = mockFetch({ status: true })
+  try {
+    const client = createAuthClient({ baseUrl: 'https://auth.example.com/api/auth' })
+
+    await assert.rejects(
+      () =>
+        client.auth.admin.email.template.create({
+          templateKey: 'welcome',
+          subjectTemplate: 'Welcome',
+          variables: Array.from(
+            { length: ATHENA_AUTH_MAX_TEMPLATE_VARIABLES + 1 },
+            (_, index) => `variable_${index}`,
+          ),
+        }),
+      /cannot contain more than 64 entries/,
+    )
+
+    assert.equal(calls.length, 0)
+  } finally {
+    restore()
+  }
+})
+
+test('auth admin email-template routes reject derived variable names above the published SDK limits', async () => {
+  const { calls, restore } = mockFetch({ status: true })
+  try {
+    const client = createAuthClient({ baseUrl: 'https://auth.example.com/api/auth' })
+    const longVariableName = 'v'.repeat(ATHENA_AUTH_MAX_TEMPLATE_VARIABLE_LENGTH + 1)
+
+    await assert.rejects(
+      () =>
+        client.auth.admin.email.template.create({
+          templateKey: 'welcome',
+          subjectTemplate: 'Welcome',
+          react: {
+            component: DynamicVariableTemplate,
+            props: {
+              [longVariableName]: 'Ava',
+            },
+          },
+        }),
+      /cannot contain entries longer than 128 characters/,
+    )
+
+    assert.equal(calls.length, 0)
   } finally {
     restore()
   }

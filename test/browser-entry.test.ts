@@ -17,6 +17,16 @@ test('browser entry keeps generator config identity helper', () => {
   assert.equal(typeof browserEntry.generatorEnv, 'function')
   assert.equal(typeof browserEntry.athenaAuth, 'function')
   assert.equal(typeof browserEntry.ATHENA_AUTH_BASE_ERROR_CODES, 'object')
+  assert.equal(browserEntry.ATHENA_AUTH_MAX_ADMIN_JSON_BYTES, 32 * 1024)
+  assert.equal(browserEntry.ATHENA_AUTH_MAX_ADMIN_JSON_DEPTH, 8)
+  assert.equal(browserEntry.ATHENA_AUTH_MAX_TEMPLATE_VARIABLES, 64)
+  assert.equal(browserEntry.ATHENA_AUTH_MAX_TEMPLATE_VARIABLE_LENGTH, 128)
+  assert.deepEqual(browserEntry.ATHENA_AUTH_ADMIN_LIMITS, {
+    maxAdminJsonBytes: 32 * 1024,
+    maxAdminJsonDepth: 8,
+    maxTemplateVariables: 64,
+    maxTemplateVariableLength: 128,
+  })
 
   const config = browserEntry.defineGeneratorConfig({
     provider: {
