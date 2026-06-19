@@ -21,6 +21,7 @@ import {
   resolveOutputPath,
   type ModelArtifactDescriptorBase,
 } from './render-shared.ts'
+import { filterIntrospectionSnapshot } from './table-selection.ts'
 import { generateTableBuilderArtifactsFromSnapshot } from './table-builder-renderer.ts'
 
 type ModelRenderDescriptor = ModelArtifactDescriptorBase & {
@@ -99,11 +100,12 @@ export function generateArtifactsFromSnapshot(
   const normalizedConfig = 'internal' in config
     ? config as NormalizedAthenaGeneratorConfig
     : normalizeGeneratorConfig(config as AthenaGeneratorConfig)
+  const filteredSnapshot = filterIntrospectionSnapshot(snapshot, normalizedConfig.filter)
   if (normalizedConfig.output.format === 'table-builder') {
-    return generateTableBuilderArtifactsFromSnapshot(snapshot, normalizedConfig)
+    return generateTableBuilderArtifactsFromSnapshot(filteredSnapshot, normalizedConfig)
   }
   return composeGeneratorArtifacts({
-    snapshot,
+    snapshot: filteredSnapshot,
     config: normalizedConfig,
     createModelDescriptor({ providerName, databaseName, schemaName, tableName, table }) {
       const modelConstName = toSafeIdentifier(
@@ -133,6 +135,6 @@ export function generateArtifactsFromSnapshot(
         table,
       }
     },
-    renderModelArtifact: descriptor => renderModelArtifact(snapshot.database, descriptor, normalizedConfig),
+    renderModelArtifact: descriptor => renderModelArtifact(filteredSnapshot.database, descriptor, normalizedConfig),
   })
 }

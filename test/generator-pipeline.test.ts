@@ -170,6 +170,7 @@ test('runSchemaGenerator loads athena.config.ts and writes generated artifacts',
 
     assert.equal(result.files.length, 4)
     assert.equal(result.writtenFiles.length, 4)
+    assert.deepEqual(result.skippedFiles, [])
     assert.equal(result.config.output.format, 'define-model')
 
     const modelPath = join(root, 'src', 'generated', 'phase-two', 'public', 'users.model.ts')
@@ -216,6 +217,7 @@ test('runSchemaGenerator supports table-builder output format', async () => {
     })
 
     assert.equal(result.files.length, 4)
+    assert.deepEqual(result.skippedFiles, [])
     assert.equal(result.config.output.format, 'table-builder')
     const modelFile = result.files.find(file => file.kind === 'model')
     const registryFile = result.files.find(file => file.kind === 'registry')
@@ -438,6 +440,89 @@ test('runSchemaGenerator does not overwrite existing database/registry files but
         'src/generated/phase-two/public/users.model.ts',
       ],
     )
+    assert.deepEqual(
+      result.skippedFiles,
+      [
+        {
+          kind: 'database',
+          path: 'src/generated/phase-two/index.ts',
+          reason: 'protected-existing-file',
+        },
+        {
+          kind: 'registry',
+          path: 'src/generated/index.ts',
+          reason: 'protected-existing-file',
+        },
+      ],
+    )
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('runSchemaGenerator can filter generated tables down to a smaller surface', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'athena-generator-table-filter-run-'))
+  try {
+    writeFileSync(
+      join(root, 'athena.config.ts'),
+      `
+      export default {
+        provider: {
+          kind: 'postgres',
+          mode: 'direct',
+          connectionString: 'postgres://postgres:postgres@127.0.0.1:5432/phase_two',
+          database: 'phase_two',
+          schemas: ['public'],
+        },
+        filter: {
+          includeTables: ['users'],
+        },
+        output: {
+          preset: 'athena-direct',
+          format: 'table-builder',
+        },
+      }
+      `,
+      'utf8',
+    )
+
+    const provider: SchemaIntrospectionProvider = {
+      backend: 'postgresql',
+      async inspect() {
+        const snapshot = await createSnapshotProvider().inspect()
+        snapshot.schemas.public.tables.notifications = {
+          schema: 'public',
+          name: 'notifications',
+          primaryKey: ['id'],
+          relations: {},
+          columns: {
+            id: {
+              name: 'id',
+              dataType: 'uuid',
+              udtName: 'uuid',
+              typeKind: 'scalar',
+              isNullable: false,
+              isPrimaryKey: true,
+              hasDefault: false,
+              isGenerated: false,
+              arrayDimensions: 0,
+            },
+          },
+        }
+        return snapshot
+      },
+    }
+
+    const result = await runSchemaGenerator({
+      cwd: root,
+      provider,
+      dryRun: true,
+    })
+
+    const modelPaths = result.files.filter(file => file.kind === 'model').map(file => file.path)
+    assert.deepEqual(modelPaths, ['athena/models/public/users.ts'])
+    assert.deepEqual(Object.keys(result.snapshot.schemas.public.tables), ['users'])
+    assert.equal(result.config.output.targets.registry, 'athena/registry.generated.ts')
   } finally {
     rmSync(root, { recursive: true, force: true })
   }

@@ -25,7 +25,7 @@ athena-js help generate
 Output:
 
 - in normal mode, writes files to disk using configured targets
-- with `--dry-run`, prints the file list plus the resolved output format and model-target hints
+- with `--dry-run`, prints the file list plus the resolved output format, schema/database/registry targets, and handwritten-seam warnings when relevant
 
 For the full command matrix and troubleshooting, see
 [`cli-command-reference.md`](cli-command-reference.md).
@@ -61,6 +61,7 @@ export interface AthenaGeneratorConfig {
   provider: GeneratorProviderInputConfig
   output?: GeneratorOutputConfig
   naming?: Partial<GeneratorNamingConfig>
+  filter?: GeneratorFilterConfig
   features?: Partial<GeneratorFeatureFlags>
   experimental?: Partial<GeneratorExperimentalFlags>
 }
@@ -127,6 +128,11 @@ export default defineGeneratorConfig({
       ["define-model", "table-builder"] as const,
       { default: "define-model" },
     ),
+    preset: generatorEnv.oneOf(
+      "ATHENA_GENERATOR_OUTPUT_PRESET",
+      ["legacy", "athena-direct"] as const,
+      { default: "legacy" },
+    ),
     targets: {
       model: generatorEnv("ATHENA_GENERATOR_MODEL_TARGET", {
         default: "athena/models/{schema_kebab}/{model_kebab}.ts",
@@ -144,6 +150,10 @@ export default defineGeneratorConfig({
     placeholderMap: generatorEnv.json("ATHENA_GENERATOR_PLACEHOLDER_MAP", {
       default: {},
     }),
+  },
+  filter: {
+    includeTables: generatorEnv.list("ATHENA_GENERATOR_TABLES", { optional: true }),
+    excludeTables: generatorEnv.list("ATHENA_GENERATOR_EXCLUDE_TABLES", { optional: true }),
   },
   naming: {
     modelType: generatorEnv.oneOf(
@@ -217,6 +227,11 @@ export default defineGeneratorConfig({
       ["define-model", "table-builder"] as const,
       { default: "define-model" },
     ),
+    preset: generatorEnv.oneOf(
+      "ATHENA_GENERATOR_OUTPUT_PRESET",
+      ["legacy", "athena-direct"] as const,
+      { default: "legacy" },
+    ),
     targets: {
       model: generatorEnv("ATHENA_GENERATOR_MODEL_TARGET", {
         default: "athena/models/{schema_kebab}/{model_kebab}.ts",
@@ -233,6 +248,10 @@ export default defineGeneratorConfig({
     emitRegistry: generatorEnv.boolean("ATHENA_GENERATOR_EMIT_REGISTRY", {
       default: true,
     }),
+  },
+  filter: {
+    includeTables: generatorEnv.list("ATHENA_GENERATOR_TABLES", { optional: true }),
+    excludeTables: generatorEnv.list("ATHENA_GENERATOR_EXCLUDE_TABLES", { optional: true }),
   },
 });
 ```
@@ -322,6 +341,7 @@ Current behavior:
 ```ts
 interface GeneratorOutputConfig {
   format?: "define-model" | "table-builder";
+  preset?: "legacy" | "athena-direct";
   targets?: Partial<GeneratorOutputTargets>;
   placeholderMap?: Record<string, string>;
 }
@@ -340,10 +360,40 @@ interface GeneratorOutputTargets {
 - `model`: `athena/models/{schema_kebab}/{model_kebab}.ts`
 - `schema`: `athena/schemas/{schema_kebab}.ts`
 - `database`: `athena/relations.ts`
-- `registry`: `athena/config.ts`
+- `registry`: `athena/config.ts` (legacy compatibility default)
 
 The defaults include the schema name in model and schema paths so `public.users`
 and `athena.users` can be generated in the same run without path collisions.
+
+Important:
+
+- the legacy registry default is preserved for additive compatibility
+- if `athena/config.ts` is a handwritten runtime/auth seam in your app, prefer `output.preset = "athena-direct"` or `output.targets.registry = "athena/registry.generated.ts"`
+- current CLI dry-runs warn when registry output still points at `athena/config.ts`
+
+### `output.preset`
+
+Use `output.preset` to start from a known target layout before applying any
+explicit `output.targets` overrides:
+
+- `"legacy"`: preserves the current compatibility defaults, including `registry: "athena/config.ts"`
+- `"athena-direct"`: keeps models and schema assemblies in `athena/*` but moves registry output to `athena/registry.generated.ts`
+
+Recommended safe direct layout:
+
+```ts
+output: {
+  preset: "athena-direct",
+  format: "table-builder",
+}
+```
+
+That resolves to:
+
+- `athena/models/{schema_kebab}/{model_kebab}.ts`
+- `athena/schemas/{schema_kebab}.ts`
+- `athena/relations.ts`
+- `athena/registry.generated.ts`
 
 If you want flat `athena/models/*.ts` output, override `output.targets.model`
 to `athena/models/{model_kebab}.ts` (or set
@@ -381,6 +431,32 @@ Regardless of output format, the generated registry file now exports
 `__athena_schema_meta` with internal metadata such as `schemaVersion`,
 `generatedAt`, `database`, and `outputFormat`. This is intended for tooling and
 debugging rather than normal application code.
+
+### Table filters
+
+Use `filter.includeTables` and `filter.excludeTables` to keep the generated
+surface small when a schema is much larger than the subset your app actually
+uses.
+
+```ts
+filter: {
+  includeTables: ["users", "public.notifications"],
+  excludeTables: ["public.audit_logs"],
+}
+```
+
+Rules:
+
+- values can be arrays or comma-separated strings
+- bare names like `"users"` match that table name in any selected schema
+- schema-qualified values like `"public.users"` target one exact table
+- `includeTables` runs first, then `excludeTables`
+- generation fails fast if the filter removes every table
+
+Env equivalents:
+
+- `ATHENA_GENERATOR_TABLES`
+- `ATHENA_GENERATOR_EXCLUDE_TABLES`
 
 ### Schema selection
 
@@ -497,6 +573,7 @@ Defaults:
 - normalized snapshot from the provider
 - generated artifacts in memory
 - written paths (when `--dry-run` is not set)
+- skipped paths for protected existing database/registry artifacts
 
 Artifact types:
 
@@ -506,6 +583,8 @@ Artifact types:
 - `registry`: `defineRegistry` object (`features.emitRegistry` must be true)
 
 The generator deduplicates output paths and throws if two artifacts collide.
+It also preserves existing `database` and `registry` files by default, and the
+CLI now reports those protected skips explicitly instead of failing silently.
 
 ## Config examples by profile
 
@@ -525,17 +604,21 @@ export default defineGeneratorConfig({
     }),
   },
   output: {
+    preset: "athena-direct",
     targets: {
       model: "athena/models/{schema_kebab}/{model_kebab}.ts",
       schema: "athena/schemas/{schema_kebab}.ts",
       database: "athena/relations.ts",
-      registry: "src/generated/registry.ts",
+      registry: "athena/registry.generated.ts",
     },
     placeholderMap: generatorEnv.json("ATHENA_GENERATOR_PLACEHOLDER_MAP", {
       default: {
         namespace: "{database_kebab}/{schema_kebab}",
       },
     }),
+  },
+  filter: {
+    includeTables: generatorEnv.list("ATHENA_GENERATOR_TABLES", { optional: true }),
   },
   naming: {
     modelType: generatorEnv.oneOf(
@@ -575,11 +658,12 @@ export default defineGeneratorConfig({
     backend: "athena",
   },
   output: {
+    preset: "athena-direct",
     targets: {
       model: "athena/models/{schema_kebab}/{model_kebab}.ts",
       schema: "athena/schemas/{schema_kebab}.ts",
       database: "athena/relations.ts",
-      registry: "athena/config.ts",
+      registry: "athena/registry.generated.ts",
     },
     placeholderMap: {},
   },

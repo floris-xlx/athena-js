@@ -18,16 +18,30 @@ Default output paths:
 - `athena/models/{schema_kebab}/{model_kebab}.ts`
 - `athena/schemas/{schema}.ts`
 - `athena/relations.ts`
-- `athena/config.ts`
+- `athena/config.ts` (legacy compatibility default)
 
 The default schema selection is `public`.
 The default output format is still legacy `define-model`.
+
+If `athena/config.ts` is a handwritten seam in your app, switch to the safe
+direct preset:
+
+```bash
+ATHENA_GENERATOR_OUTPUT_PRESET=athena-direct
+ATHENA_GENERATOR_OUTPUT_FORMAT=table-builder
+
+athena-js generate --dry-run
+```
+
+That keeps live generation under `athena/*` but moves registry output to
+`athena/registry.generated.ts`.
 
 Useful zero-config env overrides:
 
 ```bash
 DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/app_db
 ATHENA_GENERATOR_SCHEMAS=public,athena
+ATHENA_GENERATOR_OUTPUT_PRESET=athena-direct
 ATHENA_GENERATOR_OUTPUT_FORMAT=table-builder
 ATHENA_GENERATOR_MODEL_TARGET=src/generated/{schema_kebab}/{model_kebab}.ts
 
@@ -107,6 +121,7 @@ export default defineGeneratorConfig({
     mode: "direct",
   },
   output: {
+    preset: "athena-direct",
     format: "table-builder",
   },
 });
@@ -116,6 +131,7 @@ Important:
 
 - `output.format = "table-builder"` is stable and does not require an experimental flag
 - `experimental.findManyAst` is a separate runtime opt-in and does not affect generator output
+- `output.preset = "athena-direct"` is the recommended direct `athena/*` layout because it keeps registry output off `athena/config.ts`
 - if you want flat `athena/models/*.ts` files instead of schema-scoped defaults, set `output.targets.model = "athena/models/{model_kebab}.ts"` or `ATHENA_GENERATOR_MODEL_TARGET=athena/models/{model_kebab}.ts`
 
 That yields files shaped like:
@@ -146,7 +162,7 @@ export const users_form_schema = users.schemas.form;
 Generated registry files also export an internal metadata block:
 
 ```ts
-import { __athena_schema_meta, registry } from "./athena/config";
+import { __athena_schema_meta, registry } from "./athena/registry.generated";
 
 __athena_schema_meta.schemaVersion; // 1
 __athena_schema_meta.outputFormat; // "table-builder"
@@ -167,6 +183,7 @@ export default defineGeneratorConfig({
     mode: "gateway",
   },
   output: {
+    preset: "athena-direct",
     format: "table-builder",
   },
 });
@@ -205,12 +222,34 @@ export default defineGeneratorConfig({
 
 The unspecified targets keep their defaults.
 
+If you want a leaner generated surface inside a large schema, add table filters:
+
+```ts
+import { defineGeneratorConfig } from "@xylex-group/athena";
+
+export default defineGeneratorConfig({
+  provider: {
+    kind: "postgres",
+    mode: "direct",
+  },
+  filter: {
+    includeTables: ["users", "public.notifications"],
+    excludeTables: ["public.audit_logs"],
+  },
+  output: {
+    preset: "athena-direct",
+    format: "table-builder",
+  },
+});
+```
+
 ## Common env-only tweaks
 
 Switch formats:
 
 ```bash
 ATHENA_GENERATOR_OUTPUT_FORMAT=table-builder
+ATHENA_GENERATOR_OUTPUT_PRESET=athena-direct
 ```
 
 Target multiple schemas:
@@ -226,6 +265,13 @@ ATHENA_GENERATOR_MODEL_TARGET=src/generated/{schema_kebab}/{model_kebab}.ts
 ATHENA_GENERATOR_SCHEMA_TARGET=src/generated/{schema_kebab}.ts
 ATHENA_GENERATOR_DATABASE_TARGET=src/generated/database.ts
 ATHENA_GENERATOR_REGISTRY_TARGET=src/generated/registry.ts
+```
+
+Limit generated tables:
+
+```bash
+ATHENA_GENERATOR_TABLES=users,public.notifications
+ATHENA_GENERATOR_EXCLUDE_TABLES=public.audit_logs
 ```
 
 Tune naming:
@@ -248,10 +294,24 @@ export default defineGeneratorConfig({
     kind: "postgres",
     mode: "direct",
     connectionString: generatorEnv("DATABASE_URL"),
-    schemas: generatorEnv("ATHENA_GENERATOR_SCHEMAS"),
+    schemas: generatorEnv.list("ATHENA_GENERATOR_SCHEMAS", {
+      optional: true,
+    }),
   },
   output: {
-    format: generatorEnv("ATHENA_GENERATOR_OUTPUT_FORMAT", ["define-model", "table-builder"] as const),
+    format: generatorEnv.oneOf(
+      "ATHENA_GENERATOR_OUTPUT_FORMAT",
+      ["define-model", "table-builder"] as const,
+      { default: "define-model" },
+    ),
+    preset: generatorEnv.oneOf(
+      "ATHENA_GENERATOR_OUTPUT_PRESET",
+      ["legacy", "athena-direct"] as const,
+      { default: "athena-direct" },
+    ),
+  },
+  filter: {
+    includeTables: generatorEnv.list("ATHENA_GENERATOR_TABLES", { optional: true }),
   },
 });
 ```
@@ -262,7 +322,7 @@ Generated files are meant to be used directly, not wrapped again:
 
 ```ts
 import { createTypedClient } from "@xylex-group/athena";
-import { registry } from "./athena/config";
+import { registry } from "./athena/registry.generated";
 
 const athena = createTypedClient(registry, process.env.ATHENA_URL!, process.env.ATHENA_API_KEY!);
 

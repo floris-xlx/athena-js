@@ -688,12 +688,16 @@ export default defineGeneratorConfig({
       default: ["public", "athena"],
     }),
   },
+  filter: {
+    includeTables: generatorEnv.list("ATHENA_GENERATOR_TABLES", { optional: true }),
+  },
   output: {
+    preset: "athena-direct",
     targets: {
       model: "athena/models/{schema_kebab}/{model_kebab}.ts",
       schema: "athena/schemas/{schema_kebab}.ts",
       database: "athena/relations.ts",
-      registry: "athena/config.ts",
+      registry: "athena/registry.generated.ts",
     },
   },
 });
@@ -723,12 +727,15 @@ export default defineGeneratorConfig({
     mode: "direct",
   },
   output: {
+    preset: "athena-direct",
     format: "table-builder",
   },
 });
 ```
 
 Use `mode: "gateway"` when CI or runners cannot open direct PostgreSQL connections.
+Use `ATHENA_GENERATOR_TABLES` / `filter.includeTables` when you only need a
+small subset of tables from a large schema.
 For a large example pack covering zero-config runs, minimal files, table-builder output, and path overrides, see [`generator-quickstart.md`](generator-quickstart.md).
 For full env-backed config patterns, fallback env keys, and connection string notes, see [`generator-config.md`](generator-config.md).
 

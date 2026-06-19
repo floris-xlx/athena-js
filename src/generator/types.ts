@@ -61,6 +61,7 @@ export interface GeneratorOutputTargets {
   registry: string
 }
 
+export type GeneratorOutputPreset = 'legacy' | 'athena-direct'
 export type GeneratorOutputFormat = 'define-model' | 'table-builder'
 
 /**
@@ -68,6 +69,7 @@ export type GeneratorOutputFormat = 'define-model' | 'table-builder'
  */
 export interface GeneratorOutputConfig {
   format?: GeneratorOutputFormat
+  preset?: GeneratorOutputPreset
   targets?: Partial<GeneratorOutputTargets>
   placeholderMap?: Record<string, string>
 }
@@ -86,6 +88,20 @@ export interface NormalizedGeneratorOutputConfig {
  * to support env-driven configs such as `process.env.GENERATOR_SCHEMAS`.
  */
 export type GeneratorSchemaSelection = string | readonly string[]
+export type GeneratorTableSelection = string | readonly string[]
+
+/**
+ * Optional generator-side table filters used to keep the emitted surface small.
+ */
+export interface GeneratorFilterConfig {
+  includeTables?: GeneratorTableSelection
+  excludeTables?: GeneratorTableSelection
+}
+
+export interface NormalizedGeneratorFilterConfig {
+  includeTables: string[]
+  excludeTables: string[]
+}
 
 /**
  * Direct PostgreSQL introspection mode (implemented).
@@ -165,6 +181,7 @@ export interface AthenaGeneratorConfig {
   provider: GeneratorProviderInputConfig
   output?: GeneratorOutputConfig
   naming?: Partial<GeneratorNamingConfig>
+  filter?: GeneratorFilterConfig
   features?: Partial<GeneratorFeatureFlags>
   experimental?: Partial<GeneratorExperimentalFlags>
 }
@@ -176,6 +193,7 @@ export interface NormalizedAthenaGeneratorConfig {
   provider: GeneratorProviderConfig
   output: NormalizedGeneratorOutputConfig
   naming: GeneratorNamingConfig
+  filter: NormalizedGeneratorFilterConfig
   features: GeneratorFeatureFlags
   experimental: GeneratorExperimentalFlags
   internal: GeneratorInternalConfig
@@ -233,4 +251,13 @@ export interface RunGeneratorResult extends GeneratedArtifacts {
   configPath: string
   config: NormalizedAthenaGeneratorConfig
   writtenFiles: string[]
+  skippedFiles: SkippedGeneratedArtifact[]
+}
+
+export type SkippedGeneratedArtifactReason = 'protected-existing-file'
+
+export interface SkippedGeneratedArtifact {
+  kind: GeneratorArtifactKind
+  path: string
+  reason: SkippedGeneratedArtifactReason
 }

@@ -27,15 +27,22 @@ test('browser entry keeps generator config identity helper', () => {
       database: 'postgres',
     },
     output: {
-      model: 'athena/models/{schema_kebab}/{model_kebab}.ts',
-      schema: 'athena/schemas/{schema_kebab}.ts',
-      database: 'athena/relations.ts',
-      registry: 'athena/config.ts',
+      preset: 'athena-direct',
+      targets: {
+        model: 'athena/models/{schema_kebab}/{model_kebab}.ts',
+        schema: 'athena/schemas/{schema_kebab}.ts',
+        database: 'athena/relations.ts',
+        registry: 'athena/registry.generated.ts',
+      },
+    },
+    filter: {
+      includeTables: ['users'],
     },
   })
 
   assert.equal(config.provider.kind, 'postgres')
-  assert.equal(config.output.database, 'athena/relations.ts')
+  assert.equal(config.output.targets?.database, 'athena/relations.ts')
+  assert.deepEqual(config.filter?.includeTables, ['users'])
 })
 
 test('browser entry node-only exports throw explicit errors', async () => {

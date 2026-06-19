@@ -6,6 +6,7 @@ import type { NormalizedAthenaGeneratorConfig } from '../src/generator/index.ts'
 function createNormalizedGeneratorConfig(
   format: 'define-model' | 'table-builder',
   modelTarget = 'athena/models/{schema_kebab}/{model_kebab}.ts',
+  registryTarget = 'athena/config.ts',
 ): NormalizedAthenaGeneratorConfig {
   return {
     provider: {
@@ -21,7 +22,7 @@ function createNormalizedGeneratorConfig(
         model: modelTarget,
         schema: 'athena/schemas/{schema_kebab}.ts',
         database: 'athena/relations.ts',
-        registry: 'athena/config.ts',
+        registry: registryTarget,
       },
       placeholderMap: {},
     },
@@ -31,6 +32,10 @@ function createNormalizedGeneratorConfig(
       schemaConst: 'camel',
       databaseConst: 'camel',
       registryConst: 'camel',
+    },
+    filter: {
+      includeTables: [],
+      excludeTables: [],
     },
     features: {
       emitRelations: true,
@@ -100,15 +105,18 @@ test('runCLI prints dry-run output for legacy define-model artifacts', async () 
         },
       ],
       writtenFiles: [],
+      skippedFiles: [],
     }),
   })
 
   assert.equal(logs[0].includes('[dry-run] Generated 1 files'), true)
   assert.equal(logs[1], '[mode] format=define-model modelTarget=athena/models/{schema_kebab}/{model_kebab}.ts')
-  assert.equal(logs[2].includes('Zero-style table-builder files are not active'), true)
-  assert.equal(logs[3].includes('experimental.findManyAst only affects runtime findMany(...) transport'), true)
-  assert.equal(logs[4].includes('Flat athena/models/*.ts output is opt-in'), true)
-  assert.equal(logs[5], ' - src/generated/app-db/public/users.model.ts')
+  assert.equal(logs[2], '[targets] schema=athena/schemas/{schema_kebab}.ts database=athena/relations.ts registry=athena/config.ts')
+  assert.equal(logs[3].includes('Zero-style table-builder files are not active'), true)
+  assert.equal(logs[4].includes('experimental.findManyAst only affects runtime findMany(...) transport'), true)
+  assert.equal(logs[5].includes('Registry target points at athena/config.ts'), true)
+  assert.equal(logs[6].includes('Flat athena/models/*.ts output is opt-in'), true)
+  assert.equal(logs[7], ' - src/generated/app-db/public/users.model.ts')
 })
 
 test('runCLI prints dry-run output for table-builder artifacts', async () => {
@@ -134,14 +142,76 @@ test('runCLI prints dry-run output for table-builder artifacts', async () => {
         },
       ],
       writtenFiles: [],
+      skippedFiles: [],
     }),
   })
 
   assert.equal(logs[0].includes('[dry-run] Generated 1 files'), true)
   assert.equal(logs[1], '[mode] format=table-builder modelTarget=athena/models/{schema_kebab}/{model_kebab}.ts')
-  assert.equal(logs[2].includes('Table-builder generation is stable'), true)
-  assert.equal(logs[3].includes('Flat athena/models/*.ts output is opt-in'), true)
-  assert.equal(logs[4], ' - src/generated/app-db/public/users.ts')
+  assert.equal(logs[2], '[targets] schema=athena/schemas/{schema_kebab}.ts database=athena/relations.ts registry=athena/config.ts')
+  assert.equal(logs[3].includes('Table-builder generation is stable'), true)
+  assert.equal(logs[4].includes('Registry target points at athena/config.ts'), true)
+  assert.equal(logs[5].includes('Flat athena/models/*.ts output is opt-in'), true)
+  assert.equal(logs[6], ' - src/generated/app-db/public/users.ts')
+})
+
+test('runCLI prints safer direct registry targets without handwritten-seam warning', async () => {
+  const logs: string[] = []
+  await runCLI(['generate', '--dry-run'], {
+    log: message => {
+      logs.push(message)
+    },
+    runGenerator: async () => ({
+      configPath: 'C:/tmp/athena.config.ts',
+      config: createNormalizedGeneratorConfig(
+        'table-builder',
+        'athena/models/{schema_kebab}/{model_kebab}.ts',
+        'athena/registry.generated.ts',
+      ),
+      snapshot: {
+        backend: 'postgresql',
+        database: 'app_db',
+        generatedAt: new Date('2026-06-16T00:00:00.000Z').toISOString(),
+        schemas: {},
+      },
+      files: [],
+      writtenFiles: [],
+      skippedFiles: [],
+    }),
+  })
+
+  assert.equal(logs.some(line => line.includes('Registry target points at athena/config.ts')), false)
+})
+
+test('runCLI prints protected skip lines for registry/database artifacts', async () => {
+  const logs: string[] = []
+  await runCLI(['generate'], {
+    log: message => {
+      logs.push(message)
+    },
+    runGenerator: async () => ({
+      configPath: 'C:/tmp/athena.config.ts',
+      config: createNormalizedGeneratorConfig('table-builder'),
+      snapshot: {
+        backend: 'postgresql',
+        database: 'app_db',
+        generatedAt: new Date('2026-06-16T00:00:00.000Z').toISOString(),
+        schemas: {},
+      },
+      files: [],
+      writtenFiles: ['athena/models/public/users.ts'],
+      skippedFiles: [
+        {
+          kind: 'registry',
+          path: 'athena/config.ts',
+          reason: 'protected-existing-file',
+        },
+      ],
+    }),
+  })
+
+  assert.equal(logs.some(line => line.includes('[skip] athena/config.ts')), true)
+  assert.equal(logs.some(line => line.includes('protected from overwrite')), true)
 })
 
 test('runCLI normalizes postgres missing database errors with actionable guidance', async () => {

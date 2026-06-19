@@ -13,6 +13,10 @@ export {
   normalizeSchemaSelection,
   resolveProviderSchemas,
 } from './schema-selection.ts'
+export {
+  filterIntrospectionSnapshot,
+  normalizeTableSelection,
+} from './table-selection.ts'
 export { runSchemaGenerator } from './pipeline.ts'
 export type {
   AthenaGeneratorConfig,
@@ -20,21 +24,27 @@ export type {
   GeneratedArtifacts,
   GeneratorArtifactKind,
   GeneratorExperimentalFlags,
+  GeneratorFilterConfig,
   GeneratorFeatureFlags,
   GeneratorInternalConfig,
   GeneratorNamingConfig,
   GeneratorOutputConfig,
   GeneratorOutputFormat,
+  GeneratorOutputPreset,
   GeneratorOutputTargets,
   GeneratorProviderConfig,
   GeneratorSchemaSelection,
+  GeneratorTableSelection,
   LoadGeneratorConfigOptions,
   LoadedGeneratorConfig,
   NamingStyle,
+  NormalizedGeneratorFilterConfig,
   NormalizedGeneratorOutputConfig,
   NormalizedAthenaGeneratorConfig,
   RunGeneratorOptions,
   RunGeneratorResult,
+  SkippedGeneratedArtifact,
+  SkippedGeneratedArtifactReason,
 } from './types.ts'
 export type {
   GeneratorEnvBooleanOptions,

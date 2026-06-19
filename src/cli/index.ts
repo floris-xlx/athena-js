@@ -66,11 +66,24 @@ function usesSchemaScopedModelTarget(target: string): boolean {
   return /\{schema(?:_[a-z]+)?\}/.test(target)
 }
 
+function normalizePath(pathValue: string): string {
+  return pathValue.replace(/\\/g, '/')
+}
+
+function isLegacyConfigRegistryTarget(target: string): boolean {
+  return normalizePath(target) === 'athena/config.ts'
+}
+
+function isFlatSchemaTarget(target: string): boolean {
+  return normalizePath(target) === 'athena/schema.ts'
+}
+
 function formatGeneratorModeLines(
   result: Awaited<ReturnType<typeof runSchemaGenerator>>,
 ): string[] {
   const lines = [
     `[mode] format=${result.config.output.format} modelTarget=${result.config.output.targets.model}`,
+    `[targets] schema=${result.config.output.targets.schema} database=${result.config.output.targets.database} registry=${result.config.output.targets.registry}`,
   ]
 
   if (result.config.output.format === 'define-model') {
@@ -82,6 +95,18 @@ function formatGeneratorModeLines(
   lines.push(
     '[note] Table-builder generation is stable. experimental.findManyAst only affects runtime findMany(...) transport and does not enable generator table output.',
   )
+
+  if (isLegacyConfigRegistryTarget(result.config.output.targets.registry)) {
+    lines.push(
+      '[warn] Registry target points at athena/config.ts. That file is often a handwritten runtime seam; prefer output.preset="athena-direct" or output.targets.registry="athena/registry.generated.ts".',
+    )
+  }
+
+  if (isFlatSchemaTarget(result.config.output.targets.schema)) {
+    lines.push(
+      '[warn] Schema target points at athena/schema.ts. Prefer schema-scoped output such as athena/schemas/{schema_kebab}.ts.',
+    )
+  }
 
   if (usesSchemaScopedModelTarget(result.config.output.targets.model)) {
     lines.push(
@@ -197,6 +222,16 @@ function formatGeneratorError(error: unknown, configPath?: string): Error {
   return new Error(normalizeErrorMessage(error))
 }
 
+function formatSkippedArtifactLine(
+  artifact: Awaited<ReturnType<typeof runSchemaGenerator>>['skippedFiles'][number],
+): string {
+  if (artifact.reason === 'protected-existing-file') {
+    return ` [skip] ${artifact.path} (existing ${artifact.kind} artifacts are protected from overwrite; delete or retarget the file to regenerate it)`
+  }
+
+  return ` [skip] ${artifact.path}`
+}
+
 /**
  * CLI entrypoint used by `bin/athena-js.js`.
  */
@@ -236,5 +271,8 @@ export async function runCLI(argv: string[], runtime: CliRuntime = {}): Promise<
   }
   for (const filePath of result.writtenFiles) {
     log(` - ${filePath}`)
+  }
+  for (const artifact of result.skippedFiles) {
+    log(formatSkippedArtifactLine(artifact))
   }
 }

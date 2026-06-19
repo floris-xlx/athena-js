@@ -2,7 +2,7 @@
 
 This file is generated from the TypeScript source and is intended to document every public SDK method surface with a usage example.
 
-Total documented method paths: **452**
+Total documented method paths: **454**
 
 Regenerate with: `node scripts/generate-sdk-method-reference.mjs`
 
@@ -32,6 +32,7 @@ Regenerate with: `node scripts/generate-sdk-method-reference.mjs`
 | `root.defineRegistry` | `<Databases extends Record<string, DatabaseDef<Record<string, SchemaDef<Record<string, AnyModelDef>>>>>>(databases: Databases) => RegistryDef<Databases>` | `const registry = defineRegistry({ primary: defineDatabase({ public: defineSchema({}) }) })` | Declares a top-level multi-database registry. |
 | `root.defineSchema` | `<Models extends Record<string, AnyModelDef>>(models: Models) => SchemaDef<Models>` | `const schema = defineSchema({ users: defineModel<{ id: string }>({ meta: { primaryKey: ["id"], nullable: { id: false } } }) })` | Declares a schema-level model map. |
 | `root.enumeration` | `<const TValues extends readonly [string, ...string[]]>(values: TValues) => AthenaColumnBuilder<TValues[number], false, false, false, undefined, "enumeration">` | `enumeration(/* ... */)` | — |
+| `root.filterIntrospectionSnapshot` | `(snapshot: IntrospectionSnapshot, filter: NormalizedGeneratorFilterConfig) => IntrospectionSnapshot` | `filterIntrospectionSnapshot(/* ... */)` | — |
 | `root.findGeneratorConfigPath` | `(cwd?: string) => string \| undefined` | `findGeneratorConfigPath()` | Finds a supported generator config filename in the provided directory. |
 | `root.generateArtifactsFromSnapshot` | `(snapshot: IntrospectionSnapshot, config: AthenaGeneratorConfig \| NormalizedAthenaGeneratorConfig) => GeneratedArtifacts` | `generateArtifactsFromSnapshot(/* ... */)` | Generates model/schema/database/registry source artifacts from an introspection snapshot. |
 | `root.generatorEnv` | `GeneratorEnvHelper` | `generatorEnv(/* ... */)` | Typed env reader for generator configs. This keeps `athena.config.*` files declarative while preserving exact field types for booleans, lists, unions, and JSON-backed objects. |
@@ -45,6 +46,7 @@ Regenerate with: `node scripts/generate-sdk-method-reference.mjs`
 | `root.normalizeAthenaGatewayBaseUrl` | `(input: string \| null \| undefined, options?: NormalizeAthenaGatewayBaseUrlOptions) => string` | `normalizeAthenaGatewayBaseUrl(/* ... */)` | — |
 | `root.normalizeGeneratorConfig` | `(input: AthenaGeneratorConfig) => NormalizedAthenaGeneratorConfig` | `normalizeGeneratorConfig(/* ... */)` | — |
 | `root.normalizeSchemaSelection` | `(input: GeneratorSchemaSelection \| undefined) => string[]` | `normalizeSchemaSelection(/* ... */)` | Normalizes schema selection from config or env-backed strings into a stable, deduplicated list. Empty selections fall back to PostgreSQL's public schema. |
+| `root.normalizeTableSelection` | `(value: GeneratorTableSelection \| undefined) => string[]` | `normalizeTableSelection(/* ... */)` | — |
 | `root.number` | `() => AthenaColumnBuilder<number, false, false, false, undefined, "number">` | `number()` | — |
 | `root.parseBooleanFlag` | `(rawValue: string \| undefined, fallback: boolean) => boolean` | `parseBooleanFlag(/* ... */)` | Parses a string-based boolean flag with a deterministic fallback. Accepts common truthy/falsey token variants used by env vars and CLI flags. |
 | `root.renderAthenaReactEmail` | `(input: AthenaAuthReactEmailRenderInput, options?: AthenaAuthReactEmailRuntimeOptions \| AthenaAuthReactEmailConfig) => Promise<AthenaAuthRenderedReactEmail>` | `renderAthenaReactEmail(/* ... */)` | — |

@@ -270,9 +270,21 @@ By default, generator target templates are:
 - `athena/models/{schema_kebab}/{model_kebab}.ts`
 - `athena/schemas/{schema_kebab}.ts`
 - `athena/relations.ts`
-- `athena/config.ts`
+- `athena/config.ts` (legacy compatibility default)
 
 These can be changed via `output.targets`.
+
+Recommended safe direct layout:
+
+```ts
+output: {
+  preset: "athena-direct",
+  format: "table-builder",
+}
+```
+
+That keeps registry output on `athena/registry.generated.ts`, which is usually a
+better fit when `athena/config.ts` is a handwritten runtime seam.
 
 ## 8) Migration strategy: untyped -> model-first
 
@@ -287,6 +299,7 @@ A practical rollout sequence for existing code:
 ## 9) Configuration tips for stable generation
 
 - Keep naming conventions explicit in config (`modelType`, `modelConst`, etc.)
+- Use `filter.includeTables` / `filter.excludeTables` to keep generated surface area small in large schemas
 - Use `emitRelations` only when relation metadata consumers are ready
 - Use `emitRegistry` when your app imports `registry` as the primary source-of-truth; disable in transitional branches if needed
 - Run `athena-js generate --dry-run` in CI to validate output deterministically before writing files

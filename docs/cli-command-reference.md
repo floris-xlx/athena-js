@@ -40,7 +40,7 @@ athena-js generate --help
 Options:
 
 - `--config <path>`: explicit config file (relative or absolute)
-- `--dry-run`: render artifacts, print output paths, and print resolved format/target hints without writing files
+- `--dry-run`: render artifacts, print output paths, and print resolved format/schema/database/registry target hints without writing files
 - `--help`, `-h`: show generate-specific help
 
 ## What each command does
@@ -48,7 +48,7 @@ Options:
 | Command | Effect |
 | --- | --- |
 | `athena-js generate` | Loads config or env-only defaults, introspects provider, writes generated files |
-| `athena-js generate --dry-run` | Same pipeline, no file writes, plus resolved output-format/model-target hints |
+| `athena-js generate --dry-run` | Same pipeline, no file writes, plus resolved output-format/target hints and handwritten-seam warnings |
 | `athena-js generate --config <path>` | Uses provided config path instead of discovery |
 | `athena-js generate --help` | Prints `generate` usage and exits |
 
@@ -119,6 +119,30 @@ athena-js generate --help
 ```
 
 ## Common failures and exact meaning
+
+## Dry-run review behavior
+
+`athena-js generate --dry-run` now prints:
+
+- the active `output.format`
+- the resolved `model`, `schema`, `database`, and `registry` targets
+- a warning when registry output still points at `athena/config.ts`
+- the generated file list
+
+Normal write mode also prints protected skip lines when existing `database` or
+`registry` artifacts are preserved instead of overwritten.
+
+Recommended direct Athena layout:
+
+```ts
+output: {
+  preset: "athena-direct",
+  format: "table-builder",
+}
+```
+
+That keeps model output in `athena/models/{schema}/*` while moving registry
+generation to `athena/registry.generated.ts`.
 
 ### `ERR_MODULE_NOT_FOUND` for `dist/cli/index.js`
 

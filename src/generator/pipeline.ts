@@ -9,6 +9,7 @@ import type {
   LoadGeneratorConfigOptions,
   RunGeneratorOptions,
   RunGeneratorResult,
+  SkippedGeneratedArtifact,
 } from './types.ts'
 
 function canOverwriteArtifact(file: GeneratedArtifact): boolean {
@@ -27,12 +28,21 @@ async function fileExists(path: string): Promise<boolean> {
 async function writeArtifacts(
   files: GeneratedArtifact[],
   cwd: string,
-): Promise<string[]> {
+): Promise<{
+  writtenFiles: string[]
+  skippedFiles: SkippedGeneratedArtifact[]
+}> {
   const writtenFiles: string[] = []
+  const skippedFiles: SkippedGeneratedArtifact[] = []
 
   for (const file of files) {
     const absolutePath = resolve(cwd, file.path)
     if (!canOverwriteArtifact(file) && await fileExists(absolutePath)) {
+      skippedFiles.push({
+        kind: file.kind,
+        path: file.path,
+        reason: 'protected-existing-file',
+      })
       continue
     }
     await mkdir(dirname(absolutePath), { recursive: true })
@@ -40,7 +50,10 @@ async function writeArtifacts(
     writtenFiles.push(file.path)
   }
 
-  return writtenFiles
+  return {
+    writtenFiles,
+    skippedFiles,
+  }
 }
 
 /**
@@ -61,12 +74,15 @@ export async function runSchemaGenerator(options: RunGeneratorOptions = {}): Pro
   })
 
   const generated = generateArtifactsFromSnapshot(snapshot, config)
-  const writtenFiles = options.dryRun ? [] : await writeArtifacts(generated.files, cwd)
+  const writeResult = options.dryRun
+    ? { writtenFiles: [], skippedFiles: [] }
+    : await writeArtifacts(generated.files, cwd)
 
   return {
     ...generated,
     configPath,
     config,
-    writtenFiles,
+    writtenFiles: writeResult.writtenFiles,
+    skippedFiles: writeResult.skippedFiles,
   }
 }

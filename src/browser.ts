@@ -56,6 +56,10 @@ export {
   normalizeSchemaSelection,
   resolveProviderSchemas,
 } from './generator/schema-selection.ts'
+export {
+  filterIntrospectionSnapshot,
+  normalizeTableSelection,
+} from './generator/table-selection.ts'
 export { generatorEnv } from './generator/env.ts'
 export { resolvePostgresColumnType } from './generator/postgres-type-mapping.ts'
 export {
@@ -304,21 +308,27 @@ export type {
   GeneratedArtifacts,
   GeneratorArtifactKind,
   GeneratorExperimentalFlags,
+  GeneratorFilterConfig,
   GeneratorFeatureFlags,
   GeneratorInternalConfig,
   GeneratorNamingConfig,
   GeneratorOutputConfig,
   GeneratorOutputFormat,
+  GeneratorOutputPreset,
   GeneratorOutputTargets,
   GeneratorProviderConfig,
   GeneratorSchemaSelection,
+  GeneratorTableSelection,
   LoadGeneratorConfigOptions,
   LoadedGeneratorConfig,
   NamingStyle,
+  NormalizedGeneratorFilterConfig,
   NormalizedGeneratorOutputConfig,
   NormalizedAthenaGeneratorConfig,
   RunGeneratorOptions,
   RunGeneratorResult,
+  SkippedGeneratedArtifact,
+  SkippedGeneratedArtifactReason,
 } from './generator/index.ts'
 export type {
   AthenaAuthQueryPrimitive,

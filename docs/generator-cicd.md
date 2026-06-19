@@ -34,11 +34,12 @@ export default defineGeneratorConfig({
     }),
   },
   output: {
+    preset: "athena-direct",
     targets: {
       model: "athena/models/{schema_kebab}/{model_kebab}.ts",
       schema: "athena/schemas/{schema_kebab}.ts",
       database: "athena/relations.ts",
-      registry: "athena/config.ts",
+      registry: "athena/registry.generated.ts",
     },
     placeholderMap: {},
   },
@@ -102,11 +103,12 @@ export default defineGeneratorConfig({
     backend: "postgresql",
   },
   output: {
+    preset: "athena-direct",
     targets: {
       model: "athena/models/{schema_kebab}/{model_kebab}.ts",
       schema: "athena/schemas/{schema_kebab}.ts",
       database: "athena/relations.ts",
-      registry: "athena/config.ts",
+      registry: "athena/registry.generated.ts",
     },
     placeholderMap: {},
   },
@@ -185,6 +187,7 @@ This validates:
 - snapshot read
 - template rendering
 - output-path collision detection
+- registry/handwritten seam warnings
 
 without writing files.
 

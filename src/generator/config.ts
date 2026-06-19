@@ -3,12 +3,14 @@ import { resolve } from 'path'
 import { pathToFileURL } from 'url'
 import type {
   AthenaGeneratorConfig,
+  GeneratorFilterConfig,
   GeneratorExperimentalFlags,
   GeneratorFeatureFlags,
   GeneratorInternalConfig,
   GeneratorNamingConfig,
   GeneratorOutputConfig,
   GeneratorOutputFormat,
+  GeneratorOutputPreset,
   GeneratorOutputTargets,
   GeneratorProviderConfig,
   GeneratorProviderInputConfig,
@@ -19,6 +21,7 @@ import type {
 } from './types.ts'
 import { parseBooleanFlag } from '../auxiliaries.ts'
 import { normalizeSchemaSelection } from './schema-selection.ts'
+import { normalizeTableSelection } from './table-selection.ts'
 import type { BackendType } from '../gateway/types.ts'
 
 const POSTGRES_PROTOCOLS = new Set(['postgres:', 'postgresql:'])
@@ -32,14 +35,22 @@ const DEFAULT_CONFIG_CANDIDATES = [
   '.athena.config.js',
 ]
 
-const DEFAULT_TARGETS: GeneratorOutputTargets = {
+const LEGACY_DEFAULT_TARGETS: GeneratorOutputTargets = {
   model: 'athena/models/{schema_kebab}/{model_kebab}.ts',
   schema: 'athena/schemas/{schema_kebab}.ts',
   database: 'athena/relations.ts',
   registry: 'athena/config.ts',
 }
 
+const ATHENA_DIRECT_TARGETS: GeneratorOutputTargets = {
+  model: 'athena/models/{schema_kebab}/{model_kebab}.ts',
+  schema: 'athena/schemas/{schema_kebab}.ts',
+  database: 'athena/relations.ts',
+  registry: 'athena/registry.generated.ts',
+}
+
 const DEFAULT_OUTPUT_FORMAT: GeneratorOutputFormat = 'define-model'
+const DEFAULT_OUTPUT_PRESET: GeneratorOutputPreset = 'legacy'
 
 const DEFAULT_NAMING: GeneratorNamingConfig = {
   modelType: 'pascal',
@@ -62,6 +73,11 @@ const DEFAULT_EXPERIMENTAL_FLAGS: GeneratorExperimentalFlags = {
 const DEFAULT_INTERNAL_CONFIG: GeneratorInternalConfig = {
   schemaVersion: 1,
 }
+
+const DEFAULT_FILTER_CONFIG = {
+  includeTables: [],
+  excludeTables: [],
+} as const
 
 const PROJECT_ENV_FILENAMES = ['.env', '.env.local'] as const
 
@@ -87,10 +103,13 @@ const GATEWAY_API_KEY_ENV_KEYS = [
 
 const GENERATOR_SCHEMA_ENV_KEYS = ['ATHENA_GENERATOR_SCHEMAS'] as const
 const OUTPUT_FORMAT_ENV_KEYS = ['ATHENA_GENERATOR_OUTPUT_FORMAT'] as const
+const OUTPUT_PRESET_ENV_KEYS = ['ATHENA_GENERATOR_OUTPUT_PRESET'] as const
 const MODEL_TARGET_ENV_KEYS = ['ATHENA_GENERATOR_MODEL_TARGET'] as const
 const SCHEMA_TARGET_ENV_KEYS = ['ATHENA_GENERATOR_SCHEMA_TARGET'] as const
 const DATABASE_TARGET_ENV_KEYS = ['ATHENA_GENERATOR_DATABASE_TARGET'] as const
 const REGISTRY_TARGET_ENV_KEYS = ['ATHENA_GENERATOR_REGISTRY_TARGET'] as const
+const TABLES_ENV_KEYS = ['ATHENA_GENERATOR_TABLES'] as const
+const EXCLUDE_TABLES_ENV_KEYS = ['ATHENA_GENERATOR_EXCLUDE_TABLES'] as const
 const PLACEHOLDER_MAP_ENV_KEYS = ['ATHENA_GENERATOR_PLACEHOLDER_MAP'] as const
 const MODEL_TYPE_ENV_KEYS = ['ATHENA_GENERATOR_MODEL_TYPE', 'ATHENA_GENERATOR_MODEL_STYLE'] as const
 const MODEL_CONST_ENV_KEYS = ['ATHENA_GENERATOR_MODEL_CONST'] as const
@@ -106,7 +125,13 @@ const ENV_ONLY_CONFIG_PATH = '[environment defaults]'
 
 const NAMING_STYLE_VALUES = ['preserve', 'camel', 'pascal', 'snake', 'kebab'] as const
 const OUTPUT_FORMAT_VALUES = ['define-model', 'table-builder'] as const
+const OUTPUT_PRESET_VALUES = ['legacy', 'athena-direct'] as const
 const BACKEND_TYPE_VALUES = ['athena', 'postgrest', 'postgresql', 'scylladb'] as const
+
+const OUTPUT_PRESET_TARGETS: Record<GeneratorOutputPreset, GeneratorOutputTargets> = {
+  legacy: LEGACY_DEFAULT_TARGETS,
+  'athena-direct': ATHENA_DIRECT_TARGETS,
+}
 
 function normalizeRawEnvValue(rawValue: string): string {
   if (rawValue.startsWith('"') && rawValue.endsWith('"') && rawValue.length >= 2) {
@@ -374,11 +399,21 @@ function normalizeExperimentalFlags(
   }
 }
 
+function normalizeFilterConfig(
+  input: GeneratorFilterConfig | undefined,
+) {
+  return {
+    includeTables: normalizeTableSelection(input?.includeTables),
+    excludeTables: normalizeTableSelection(input?.excludeTables),
+  }
+}
+
 function normalizeOutputConfig(output: GeneratorOutputConfig | undefined): NormalizedGeneratorOutputConfig {
+  const preset = output?.preset ?? DEFAULT_OUTPUT_PRESET
   return {
     format: output?.format ?? DEFAULT_OUTPUT_FORMAT,
     targets: {
-      ...DEFAULT_TARGETS,
+      ...OUTPUT_PRESET_TARGETS[preset],
       ...(output?.targets ?? {}),
     },
     placeholderMap: {
@@ -469,6 +504,10 @@ export function normalizeGeneratorConfig(input: AthenaGeneratorConfig): Normaliz
       ...DEFAULT_NAMING,
       ...(input.naming ?? {}),
     },
+    filter: {
+      ...DEFAULT_FILTER_CONFIG,
+      ...normalizeFilterConfig(input.filter),
+    },
     features: normalizeFeatureFlags(input.features),
     experimental: normalizeExperimentalFlags(input.experimental),
     internal: {
@@ -554,6 +593,7 @@ function importConfigModule(moduleSpecifier: string): Promise<unknown> {
 
 function buildEnvironmentOutputConfig(): GeneratorOutputConfig | undefined {
   const format = resolveOptionalOneOf(OUTPUT_FORMAT_ENV_KEYS, OUTPUT_FORMAT_VALUES)
+  const preset = resolveOptionalOneOf(OUTPUT_PRESET_ENV_KEYS, OUTPUT_PRESET_VALUES)
   const modelTarget = resolveFallbackValue(MODEL_TARGET_ENV_KEYS)
   const schemaTarget = resolveFallbackValue(SCHEMA_TARGET_ENV_KEYS)
   const databaseTarget = resolveFallbackValue(DATABASE_TARGET_ENV_KEYS)
@@ -562,6 +602,7 @@ function buildEnvironmentOutputConfig(): GeneratorOutputConfig | undefined {
 
   if (
     format === undefined &&
+    preset === undefined &&
     modelTarget === undefined &&
     schemaTarget === undefined &&
     databaseTarget === undefined &&
@@ -573,6 +614,7 @@ function buildEnvironmentOutputConfig(): GeneratorOutputConfig | undefined {
 
   return {
     format,
+    preset,
     targets: {
       ...(modelTarget ? { model: modelTarget } : {}),
       ...(schemaTarget ? { schema: schemaTarget } : {}),
@@ -580,6 +622,20 @@ function buildEnvironmentOutputConfig(): GeneratorOutputConfig | undefined {
       ...(registryTarget ? { registry: registryTarget } : {}),
     },
     placeholderMap,
+  }
+}
+
+function buildEnvironmentFilterConfig(): GeneratorFilterConfig | undefined {
+  const includeTables = resolveFallbackValue(TABLES_ENV_KEYS)
+  const excludeTables = resolveFallbackValue(EXCLUDE_TABLES_ENV_KEYS)
+
+  if (includeTables === undefined && excludeTables === undefined) {
+    return undefined
+  }
+
+  return {
+    ...(includeTables !== undefined ? { includeTables } : {}),
+    ...(excludeTables !== undefined ? { excludeTables } : {}),
   }
 }
 
@@ -677,6 +733,7 @@ function createEnvironmentGeneratorConfig(): AthenaGeneratorConfig | undefined {
     provider,
     output: buildEnvironmentOutputConfig(),
     naming: buildEnvironmentNamingConfig(),
+    filter: buildEnvironmentFilterConfig(),
     features: buildEnvironmentFeatureFlags(),
     experimental: buildEnvironmentExperimentalFlags(),
   }

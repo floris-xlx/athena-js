@@ -1358,12 +1358,13 @@ interface AthenaGeneratorConfig {
   provider: GeneratorProviderInputConfig
   output?: GeneratorOutputConfig
   naming?: Partial<GeneratorNamingConfig>
+  filter?: GeneratorFilterConfig
   features?: Partial<GeneratorFeatureFlags>
   experimental?: Partial<GeneratorExperimentalFlags>
 }
 ```
 
-`runSchemaGenerator(...)` returns the normalized generator config, snapshot, generated files, and written files (unless dry-run).
+`runSchemaGenerator(...)` returns the normalized generator config, filtered snapshot, generated files, written files, and skipped protected artifacts (unless dry-run).
 `loadGeneratorConfig(...)` now also supports env-only fallback when no `athena.config.*` file exists.
 
 ## React integration (`@xylex-group/athena/react`)
@@ -1426,7 +1427,11 @@ Use these after large API-level updates or generated contract changes.
   - `model`: `athena/models/{schema_kebab}/{model_kebab}.ts`
   - `schema`: `athena/schemas/{schema_kebab}.ts`
   - `database`: `athena/relations.ts`
-  - `registry`: `athena/config.ts`
+  - `registry`: `athena/config.ts` (legacy compatibility default)
+- safe direct preset:
+  - `output.preset: "athena-direct"`
+  - recommended with `output.format: "table-builder"`
+  - moves registry output to `athena/registry.generated.ts`
 - naming:
   - `modelType: "pascal"`
   - `modelConst: "camel"`
@@ -1436,6 +1441,9 @@ Use these after large API-level updates or generated contract changes.
 - feature flags:
   - `emitRelations: true`
   - `emitRegistry: true`
+- filters:
+  - `filter.includeTables`: optional table allow-list
+  - `filter.excludeTables`: optional table deny-list
 - experimental:
   - `postgresGatewayIntrospection: false`
   - `scyllaProviderContracts: true`
