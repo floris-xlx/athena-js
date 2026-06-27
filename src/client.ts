@@ -32,6 +32,8 @@ import { createDbModule } from './db/module.ts'
 import type { AthenaDbModule } from './db/module.ts'
 import { createStorageModule } from './storage/module.ts'
 import type { AthenaStorageClientConfig, AthenaStorageModule } from './storage/module.ts'
+import { createChatModule } from './chat/module.ts'
+import type { AthenaChatModule, AthenaChatWebSocketFactory } from './chat/types.ts'
 import { createAthenaClientBuilder, toBackendConfig } from './client-builder.ts'
 import {
   compileOrderBy,
@@ -2252,6 +2254,7 @@ export interface AthenaSdkClient<TStrict extends boolean = false> {
 
 export interface AthenaSdkClientWithAuth<TStrict extends boolean = false> extends AthenaSdkClient<TStrict> {
   auth: AthenaAuthBindings
+  chat: AthenaChatModule
   withContext(context?: AthenaClientContextOptions): AthenaSdkClientWithAuth<TStrict>
   withSession(
     session?: AthenaClientSessionLike | null,
@@ -2288,6 +2291,11 @@ export interface AthenaCreateClientServiceUrlConfig {
   url?: string | null | undefined
 }
 
+export interface AthenaCreateClientChatOptions extends AthenaCreateClientServiceUrlConfig {
+  wsUrl?: string | null | undefined
+  webSocketFactory?: AthenaChatWebSocketFactory | null | undefined
+}
+
 export interface AthenaCreateClientAuthOptions
   extends Omit<AthenaAuthClientConfig, 'baseUrl' | 'apiKey' | 'bearerToken' | 'cookie' | 'sessionToken'> {
   url?: string | null | undefined
@@ -2308,10 +2316,13 @@ export interface AthenaCreateClientOptions {
   db?: AthenaCreateClientServiceUrlConfig
   gateway?: AthenaCreateClientServiceUrlConfig
   auth?: AthenaCreateClientAuthOptions
+  chat?: AthenaCreateClientChatOptions
   storage?: AthenaCreateClientServiceUrlConfig
   dbUrl?: string | null | undefined
   gatewayUrl?: string | null | undefined
   authUrl?: string | null | undefined
+  chatUrl?: string | null | undefined
+  chatWsUrl?: string | null | undefined
   storageUrl?: string | null | undefined
   experimental?: AthenaClientExperimentalOptions
 }
@@ -2412,6 +2423,9 @@ export interface AthenaClientConfig {
   headers?: Record<string, string>
   auth?: AthenaCreateClientAuthOptions
   authUrl?: string
+  chat?: AthenaCreateClientChatOptions
+  chatUrl?: string
+  chatWsUrl?: string
   storageUrl?: string
   experimental?: AthenaClientExperimentalOptions
 }
@@ -2423,6 +2437,8 @@ const ATHENA_ENV_GATEWAY_URL_KEYS = [
   'NEXT_PUBLIC_ATHENA_DB_API_URL',
 ] as const
 const ATHENA_ENV_AUTH_URL_KEYS = ['ATHENA_AUTH_URL', 'NEXT_PUBLIC_ATHENA_AUTH_URL'] as const
+const ATHENA_ENV_CHAT_URL_KEYS = ['ATHENA_CHAT_URL', 'NEXT_PUBLIC_ATHENA_CHAT_URL'] as const
+const ATHENA_ENV_CHAT_WS_URL_KEYS = ['ATHENA_CHAT_WS_URL', 'NEXT_PUBLIC_ATHENA_CHAT_WS_URL'] as const
 const ATHENA_ENV_STORAGE_URL_KEYS = ['ATHENA_STORAGE_URL', 'NEXT_PUBLIC_ATHENA_STORAGE_URL'] as const
 const ATHENA_ENV_KEY_KEYS = [
   'ATHENA_API_KEY',
@@ -2558,6 +2574,16 @@ function appendServicePath(baseUrl: string, segment: string): string {
   return `${normalizedBaseUrl}/${segment.replace(/^\/+/, '')}`
 }
 
+function appendRealtimeGatewayPath(baseUrl: string): string {
+  const normalizedBaseUrl = normalizeAthenaGatewayBaseUrl(baseUrl, { label: 'Athena public base URL' })
+  const wsUrl = new URL(normalizedBaseUrl)
+  wsUrl.protocol = wsUrl.protocol === 'https:' ? 'wss:' : 'ws:'
+  wsUrl.pathname = `${wsUrl.pathname.replace(/\/+$/, '')}/wss/gateway`
+  wsUrl.search = ''
+  wsUrl.hash = ''
+  return wsUrl.toString()
+}
+
 function resolveServiceUrlOverride(
   value: string | null | undefined,
   label: string,
@@ -2580,6 +2606,14 @@ function resolveServiceUrls(config: AthenaCreateClientConfig) {
       resolveServiceUrlOverride(config.auth?.baseUrl, 'Athena auth base URL') ??
       resolveServiceUrlOverride(config.authUrl, 'Athena auth base URL') ??
       (baseUrl ? appendServicePath(baseUrl, 'auth') : undefined),
+    chatUrl:
+      resolveServiceUrlOverride(config.chat?.url, 'Athena chat base URL') ??
+      resolveServiceUrlOverride(config.chatUrl, 'Athena chat base URL') ??
+      (baseUrl ? appendServicePath(baseUrl, 'chat') : undefined),
+    chatWsUrl:
+      normalizeOptionalString(config.chat?.wsUrl) ??
+      normalizeOptionalString(config.chatWsUrl) ??
+      (baseUrl ? appendRealtimeGatewayPath(baseUrl) : undefined),
     storageUrl:
       resolveServiceUrlOverride(config.storage?.url, 'Athena storage base URL') ??
       resolveServiceUrlOverride(config.storageUrl, 'Athena storage base URL') ??
@@ -2711,6 +2745,7 @@ function mergeClientOverrideOptions(
         : undefined,
       db: base.db ? { ...base.db } : undefined,
       gateway: base.gateway ? { ...base.gateway } : undefined,
+      chat: base.chat ? { ...base.chat } : undefined,
       storage: base.storage ? { ...base.storage } : undefined,
     }
   }
@@ -2722,6 +2757,7 @@ function mergeClientOverrideOptions(
     auth: mergeAuthClientOptions(base.auth, overrides.auth),
     db: mergeServiceUrlOverrides(base.db, overrides.db),
     gateway: mergeServiceUrlOverrides(base.gateway, overrides.gateway),
+    chat: mergeServiceUrlOverrides(base.chat, overrides.chat) as AthenaCreateClientChatOptions | undefined,
     storage: mergeServiceUrlOverrides(base.storage, overrides.storage),
   }
 }
@@ -2791,6 +2827,9 @@ function resolveCreateClientConfig(
     headers: config.headers,
     auth: config.auth,
     authUrl: resolvedUrls.authUrl,
+    chat: config.chat,
+    chatUrl: resolvedUrls.chatUrl,
+    chatWsUrl: resolvedUrls.chatWsUrl,
     storageUrl: resolvedUrls.storageUrl,
     experimental: config.experimental,
   }
@@ -2915,6 +2954,18 @@ function createClientFromConfig<TStrict extends boolean = false>(
     queryTracer,
   ) as AthenaSdkClient<TStrict>['query']
   const db = createDbModule({ from, rpc, query })
+  const chat = createChatModule({
+    baseUrl: config.chatUrl,
+    apiKey: config.apiKey,
+    client: config.client,
+    headers: config.headers,
+    bearerToken: normalizedAuthConfig?.bearerToken,
+    cookie: normalizedAuthConfig?.cookie,
+    sessionToken: normalizedAuthConfig?.sessionToken,
+    forceNoCache: config.forceNoCache,
+    wsUrl: config.chatWsUrl,
+    webSocketFactory: config.chat?.webSocketFactory ?? undefined,
+  })
   const withContext: AthenaSdkClientWithAuth<TStrict>['withContext'] = context =>
     createClientFromInput<TStrict>(
       mergeClientOverrideOptions(sourceConfig, toClientContextOverrides(context)),
@@ -2936,6 +2987,7 @@ function createClientFromConfig<TStrict extends boolean = false>(
     query,
     verifyConnection: gateway.verifyConnection,
     auth: auth.auth,
+    chat,
     withContext,
     withSession,
     withOptions: authWithOptions,
@@ -3043,6 +3095,10 @@ export class AthenaClient {
       options.gatewayUrl ?? readFirstEnvValue(env, ATHENA_ENV_GATEWAY_URL_KEYS)
     const authUrl =
       options.authUrl ?? readFirstEnvValue(env, ATHENA_ENV_AUTH_URL_KEYS)
+    const chatUrl =
+      options.chatUrl ?? readFirstEnvValue(env, ATHENA_ENV_CHAT_URL_KEYS)
+    const chatWsUrl =
+      options.chatWsUrl ?? readFirstEnvValue(env, ATHENA_ENV_CHAT_WS_URL_KEYS)
     const storageUrl =
       options.storageUrl ?? readFirstEnvValue(env, ATHENA_ENV_STORAGE_URL_KEYS)
     const key = options.key ?? readFirstEnvValue(env, ATHENA_ENV_KEY_KEYS)
@@ -3063,6 +3119,8 @@ export class AthenaClient {
       url,
       gatewayUrl,
       authUrl,
+      chatUrl,
+      chatWsUrl,
       storageUrl,
       key,
       client,

@@ -84,6 +84,8 @@ export type AthenaAuthEndpointPath =
   | '/admin/email-template/delete'
   | '/admin/email-template/list'
   | '/admin/email-template/update'
+  | '/admin/email-template/send'
+  | '/admin/email-event-type/list'
   | '/admin/email/list'
   | '/api-key/create'
   | '/api-key/get'
@@ -926,46 +928,83 @@ export interface AthenaAdminEmailFailureDeleteRequest {
 export interface AthenaAdminEmailTemplateListQuery {
   limit?: number
   offset?: number
-  templateKey?: string
+  template_key?: string
+  event_type?: string
   locale?: string
-  isActive?: boolean
+  is_active?: boolean
+}
+
+export interface AthenaAuthEmailTemplateVariableBinding {
+  name: string
+  source: string
+  required?: boolean
+}
+
+export interface AthenaAuthEmailTemplateAttachment {
+  file_url: string
+  filename?: string
+}
+
+export interface AthenaAdminEmailTemplateRecord {
+  id?: string
+  template_key: string
+  event_type?: string | null
+  subject_template?: string | null
+  text_template?: string | null
+  html_template?: string | null
+  variables?: string[]
+  variable_bindings?: AthenaAuthEmailTemplateVariableBinding[]
+  attachments?: AthenaAuthEmailTemplateAttachment[]
+  attachment_failure_mode?: 'fail' | 'skip' | null
+  is_active?: boolean
+  metadata?: AthenaAuthLooseRecord
+  created_at?: string
+  updated_at?: string
 }
 
 export interface AthenaAdminEmailTemplateListResponse {
   total?: number
   limit?: number
   offset?: number
-  emailTemplates?: AthenaAuthLooseRecord[]
+  email_templates?: AthenaAdminEmailTemplateRecord[]
 }
 
 export interface AthenaAdminEmailTemplateCreateRequest {
-  templateKey: string
+  template_key: string
+  event_type?: string
   locale?: string
-  subjectTemplate: string
-  textTemplate?: string
-  htmlTemplate?: string
+  subject_template?: string
+  text_template?: string
+  html_template?: string
   /**
-   * Optional React Email render input. When provided, `htmlTemplate` is derived automatically.
+   * Optional React Email render input. When provided, `html_template` is derived automatically.
    */
   react?: AthenaAuthReactEmailRenderInput
   variables?: string[]
-  isActive?: boolean
+  variable_bindings?: AthenaAuthEmailTemplateVariableBinding[]
+  attachments?: string | AthenaAuthEmailTemplateAttachment | AthenaAuthEmailTemplateAttachment[]
+  attachment_failure_mode?: 'fail' | 'skip'
+  is_active?: boolean
   metadata?: AthenaAuthLooseRecord
 }
 
 export interface AthenaAdminEmailTemplateUpdateRequest {
   id: string
-  templateKey?: string
+  template_key?: string
+  event_type?: string
   locale?: string
-  subjectTemplate?: string
-  textTemplate?: string | null
-  htmlTemplate?: string | null
+  subject_template?: string
+  text_template?: string | null
+  html_template?: string | null
   /**
-   * Optional React Email render input. When provided, `htmlTemplate` is derived automatically.
+   * Optional React Email render input. When provided, `html_template` is derived automatically.
    */
   react?: AthenaAuthReactEmailRenderInput
   variables?: string[]
-  isActive?: boolean
+  variable_bindings?: AthenaAuthEmailTemplateVariableBinding[]
+  attachments?: string | AthenaAuthEmailTemplateAttachment | AthenaAuthEmailTemplateAttachment[]
+  attachment_failure_mode?: 'fail' | 'skip'
+  is_active?: boolean
   metadata?: AthenaAuthLooseRecord
 }
 
@@ -978,7 +1017,41 @@ export interface AthenaAdminEmailTemplateGetQuery {
 }
 
 export interface AthenaAdminEmailTemplateGetResponse {
-  emailTemplate?: AthenaAuthLooseRecord
+  email_template?: AthenaAdminEmailTemplateRecord
+}
+
+export interface AthenaAdminEmailTemplateSendRequest {
+  template_id: string
+  recipient_email: string
+  render_variables?: AthenaAuthLooseRecord
+  user_id?: string
+  organization_id?: string
+  session_token?: string
+  metadata?: AthenaAuthLooseRecord
+}
+
+export interface AthenaAdminEmailTemplateSendResponse {
+  success: boolean
+  flow?: string | null
+  template_id?: string | null
+  template_key?: string | null
+  event_type?: string | null
+  recipient_email?: string | null
+  subject?: string | null
+  attachment_count?: number | null
+  delivery_metadata?: AthenaAuthLooseRecord | null
+  email_send_failure_id?: string | null
+  error?: string | null
+}
+
+export interface AthenaAdminEmailEventTypeRecord {
+  event_type: string
+  label?: string | null
+  description?: string | null
+}
+
+export interface AthenaAdminEmailEventTypeListResponse {
+  event_types?: AthenaAdminEmailEventTypeRecord[]
 }
 
 export interface AthenaApiKeyCreateRequest {
@@ -1814,17 +1887,29 @@ export interface AthenaAuthBindings {
         create: (
           input: AthenaAdminEmailTemplateCreateRequest & AthenaAuthFetchCompatibleInput,
           options?: AthenaAuthCallOptions,
-        ) => Promise<AthenaAuthResult<AthenaAuthLooseRecord>>
+        ) => Promise<AthenaAuthResult<AthenaAdminEmailTemplateRecord>>
         /** Update email template. Route: `POST /admin/email-template/update`. */
         update: (
           input: AthenaAdminEmailTemplateUpdateRequest & AthenaAuthFetchCompatibleInput,
           options?: AthenaAuthCallOptions,
-        ) => Promise<AthenaAuthResult<AthenaAuthLooseRecord>>
+        ) => Promise<AthenaAuthResult<AthenaAdminEmailTemplateRecord>>
         /** Delete email template. Route: `POST /admin/email-template/delete`. */
         delete: (
           input: AthenaAdminEmailTemplateDeleteRequest & AthenaAuthFetchCompatibleInput,
           options?: AthenaAuthCallOptions,
         ) => Promise<AthenaAuthResult<AthenaAdminSuccessResponse>>
+        /** Send one stored email template. Route: `POST /admin/email-template/send`. */
+        send: (
+          input: AthenaAdminEmailTemplateSendRequest & AthenaAuthFetchCompatibleInput,
+          options?: AthenaAuthCallOptions,
+        ) => Promise<AthenaAuthResult<AthenaAdminEmailTemplateSendResponse>>
+      }
+      eventType: {
+        /** List canonical admin email event types. Route: `GET /admin/email-event-type/list`. */
+        list: (
+          input?: AthenaAuthFetchCompatibleInput,
+          options?: AthenaAuthCallOptions,
+        ) => Promise<AthenaAuthResult<AthenaAdminEmailEventTypeListResponse>>
       }
     }
     emailTemplate: {
@@ -1837,7 +1922,7 @@ export interface AthenaAuthBindings {
       create: (
         input: AthenaAdminEmailTemplateCreateRequest & AthenaAuthFetchCompatibleInput,
         options?: AthenaAuthCallOptions,
-      ) => Promise<AthenaAuthResult<AthenaAuthLooseRecord>>
+      ) => Promise<AthenaAuthResult<AthenaAdminEmailTemplateRecord>>
       /** Delete email template. Route: `POST /admin/email-template/delete`. */
       delete: (
         input: AthenaAdminEmailTemplateDeleteRequest & AthenaAuthFetchCompatibleInput,
@@ -1852,7 +1937,19 @@ export interface AthenaAuthBindings {
       update: (
         input: AthenaAdminEmailTemplateUpdateRequest & AthenaAuthFetchCompatibleInput,
         options?: AthenaAuthCallOptions,
-      ) => Promise<AthenaAuthResult<AthenaAuthLooseRecord>>
+      ) => Promise<AthenaAuthResult<AthenaAdminEmailTemplateRecord>>
+      /** Send one stored email template. Route: `POST /admin/email-template/send`. */
+      send: (
+        input: AthenaAdminEmailTemplateSendRequest & AthenaAuthFetchCompatibleInput,
+        options?: AthenaAuthCallOptions,
+      ) => Promise<AthenaAuthResult<AthenaAdminEmailTemplateSendResponse>>
+    }
+    emailEventType: {
+      /** List canonical admin email event types. Route: `GET /admin/email-event-type/list`. */
+      list: (
+        input?: AthenaAuthFetchCompatibleInput,
+        options?: AthenaAuthCallOptions,
+      ) => Promise<AthenaAuthResult<AthenaAdminEmailEventTypeListResponse>>
     }
   }
   apiKey: {

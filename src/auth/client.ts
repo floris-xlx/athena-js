@@ -188,6 +188,67 @@ function mergeCallOptions(
   }
 }
 
+function copyDefinedField(
+  target: Record<string, unknown>,
+  source: Record<string, unknown>,
+  targetKey: string,
+  sourceKey: string,
+): void {
+  if (!(sourceKey in source)) {
+    return
+  }
+  const value = source[sourceKey]
+  if (value !== undefined) {
+    target[targetKey] = value
+  }
+}
+
+function normalizeAdminEmailTemplatePayload(payload: Record<string, unknown>): Record<string, unknown> {
+  const normalized = { ...payload }
+
+  copyDefinedField(normalized, payload, 'template_key', 'templateKey')
+  copyDefinedField(normalized, payload, 'event_type', 'eventType')
+  copyDefinedField(normalized, payload, 'subject_template', 'subjectTemplate')
+  copyDefinedField(normalized, payload, 'text_template', 'textTemplate')
+  copyDefinedField(normalized, payload, 'html_template', 'htmlTemplate')
+  copyDefinedField(normalized, payload, 'variable_bindings', 'variableBindings')
+  copyDefinedField(normalized, payload, 'attachment_failure_mode', 'attachmentFailureMode')
+  copyDefinedField(normalized, payload, 'is_active', 'isActive')
+
+  return normalized
+}
+
+function toReactEmailTemplateCompatibilityInput<TInput extends AthenaAuthFetchCompatibleInput & {
+  react?: AthenaAuthReactEmailRenderInput
+}>(input: TInput): TInput {
+  const payload = input as Record<string, unknown>
+  const compatibility = { ...payload }
+
+  copyDefinedField(compatibility, payload, 'templateKey', 'template_key')
+  copyDefinedField(compatibility, payload, 'eventType', 'event_type')
+  copyDefinedField(compatibility, payload, 'subjectTemplate', 'subject_template')
+  copyDefinedField(compatibility, payload, 'textTemplate', 'text_template')
+  copyDefinedField(compatibility, payload, 'htmlTemplate', 'html_template')
+  copyDefinedField(compatibility, payload, 'variableBindings', 'variable_bindings')
+  copyDefinedField(compatibility, payload, 'attachmentFailureMode', 'attachment_failure_mode')
+  copyDefinedField(compatibility, payload, 'isActive', 'is_active')
+
+  return compatibility as unknown as TInput
+}
+
+function normalizeAdminEmailTemplateSendPayload(payload: Record<string, unknown>): Record<string, unknown> {
+  const normalized = { ...payload }
+
+  copyDefinedField(normalized, payload, 'template_id', 'templateId')
+  copyDefinedField(normalized, payload, 'recipient_email', 'recipientEmail')
+  copyDefinedField(normalized, payload, 'render_variables', 'renderVariables')
+  copyDefinedField(normalized, payload, 'user_id', 'userId')
+  copyDefinedField(normalized, payload, 'organization_id', 'organizationId')
+  copyDefinedField(normalized, payload, 'session_token', 'sessionToken')
+
+  return normalized
+}
+
 function toSessionGuardFailure(
   sessionResult: AthenaAuthResult<AthenaAuthSessionResponse>,
 ): AthenaAuthGuardResult {
@@ -666,18 +727,19 @@ export function createAuthClient(config: AthenaAuthClientConfig = {}): AthenaAut
     route: '/admin/email-template/create' | '/admin/email-template/update',
     input: TInput,
   ) =>
-    resolveReactEmailPayloadFields(input, {
+    resolveReactEmailPayloadFields(toReactEmailTemplateCompatibilityInput(input), {
       htmlField: 'htmlTemplate',
       textField: 'textTemplate',
       variablesField: 'variables',
     }, withReactEmailRoute(route)).then(payload => {
+      const normalizedPayload = normalizeAdminEmailTemplatePayload(payload as Record<string, unknown>)
       if ('variables' in payload && payload.variables !== undefined && payload.variables !== null) {
         assertAthenaAuthTemplateVariables(
           payload.variables,
           `${route} variables`,
         )
       }
-      return payload
+      return normalizedPayload
     })
 
   const requireSession: AthenaAuthBindings['requireSession'] = async (input, options) => {
@@ -1441,6 +1503,15 @@ export function createAuthClient(config: AthenaAuthClientConfig = {}): AthenaAut
               options,
             ),
           delete: (input, options) => postGeneric('/admin/email-template/delete', input, options),
+          send: (input, options) =>
+            postGeneric(
+              '/admin/email-template/send',
+              normalizeAdminEmailTemplateSendPayload(extractFetchOptions(input).payload as Record<string, unknown>),
+              options,
+            ),
+        },
+        eventType: {
+          list: (input, options) => getWithQuery('/admin/email-event-type/list', input, options),
         },
       },
       emailTemplate: {
@@ -1459,6 +1530,15 @@ export function createAuthClient(config: AthenaAuthClientConfig = {}): AthenaAut
             await resolveAdminEmailTemplatePayload('/admin/email-template/update', input),
             options,
           ),
+        send: (input, options) =>
+          postGeneric(
+            '/admin/email-template/send',
+            normalizeAdminEmailTemplateSendPayload(extractFetchOptions(input).payload as Record<string, unknown>),
+            options,
+          ),
+      },
+      emailEventType: {
+        list: (input, options) => getWithQuery('/admin/email-event-type/list', input, options),
       },
     },
     apiKey: {

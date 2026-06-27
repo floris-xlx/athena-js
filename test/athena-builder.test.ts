@@ -60,7 +60,7 @@ test('createClient(url, key, { client }) still works', async () => {
   }
 })
 
-test('createClient({ url, key }) routes db, auth, and storage through the unified public base URL', async () => {
+test('createClient({ url, key }) routes db, auth, chat, realtime info, and storage through the unified public base URL', async () => {
   const calls: Array<{ url: string; init?: RequestInit }> = []
   const originalFetch = globalThis.fetch
   globalThis.fetch = async (url, init) => {
@@ -89,6 +89,21 @@ test('createClient({ url, key }) routes db, auth, and storage through the unifie
         ],
       }, 200)
     }
+    if (requestUrl.endsWith('/chat/rooms')) {
+      return createMockResponse({
+        items: [],
+      }, 200)
+    }
+    if (requestUrl.endsWith('/wss/info')) {
+      return createMockResponse({
+        status: 'success',
+        message: 'Athena WebSocket gateway',
+        data: {
+          transport: 'wss',
+          path: '/wss/gateway',
+        },
+      }, 200)
+    }
     return createMockResponse([{ id: 1 }], 200)
   }
 
@@ -101,20 +116,26 @@ test('createClient({ url, key }) routes db, auth, and storage through the unifie
 
     await client.from('users').select('id').limit(1)
     const session = await client.auth.getSession()
+    const rooms = await client.chat.room.list()
+    const realtimeInfo = await client.chat.realtime.info()
     const catalogs = await client.storage.listStorageCatalogs()
 
     assert.equal(session.ok, true)
+    assert.deepEqual(rooms.items, [])
+    assert.equal(realtimeInfo.data?.path, '/wss/gateway')
     assert.equal(catalogs.data[0].id, 's3_1')
-    assert.equal(calls.length, 3)
+    assert.equal(calls.length, 5)
     assert.equal(calls[0].url, 'https://acme.v3.athena-db.com/db/gateway/fetch')
     assert.equal(calls[1].url, 'https://acme.v3.athena-db.com/auth/get-session')
-    assert.equal(calls[2].url, 'https://acme.v3.athena-db.com/storage/catalogs')
+    assert.equal(calls[2].url, 'https://acme.v3.athena-db.com/chat/rooms')
+    assert.equal(calls[3].url, 'https://acme.v3.athena-db.com/wss/info')
+    assert.equal(calls[4].url, 'https://acme.v3.athena-db.com/storage/catalogs')
   } finally {
     globalThis.fetch = originalFetch
   }
 })
 
-test('createClient({ key, db/auth/storage overrides }) honors explicit per-service URLs without a unified root', async () => {
+test('createClient({ key, db/auth/chat/storage overrides }) honors explicit per-service URLs without a unified root', async () => {
   const calls: Array<{ url: string; init?: RequestInit }> = []
   const originalFetch = globalThis.fetch
   globalThis.fetch = async (url, init) => {
@@ -129,6 +150,9 @@ test('createClient({ key, db/auth/storage overrides }) honors explicit per-servi
     if (requestUrl.endsWith('/storage/v1/catalogs')) {
       return createMockResponse({ data: [] }, 200)
     }
+    if (requestUrl.endsWith('/chat/v1/rooms')) {
+      return createMockResponse({ items: [] }, 200)
+    }
     return createMockResponse([{ id: 2 }], 200)
   }
 
@@ -141,6 +165,10 @@ test('createClient({ key, db/auth/storage overrides }) honors explicit per-servi
       auth: {
         url: 'https://auth.internal.local/auth/v1',
       },
+      chat: {
+        url: 'https://chat.internal.local/chat/v1',
+        wsUrl: 'wss://chat.internal.local/wss/gateway',
+      },
       storage: {
         url: 'https://storage.internal.local/storage/v1',
       },
@@ -149,19 +177,21 @@ test('createClient({ key, db/auth/storage overrides }) honors explicit per-servi
 
     await client.from('users').select('id').limit(1)
     const session = await client.auth.getSession()
+    await client.chat.room.list()
     await client.storage.listStorageCatalogs()
 
     assert.equal(session.ok, true)
-    assert.equal(calls.length, 3)
+    assert.equal(calls.length, 4)
     assert.equal(calls[0].url, 'https://gateway.internal.local/rest/v1/gateway/fetch')
     assert.equal(calls[1].url, 'https://auth.internal.local/auth/v1/get-session')
-    assert.equal(calls[2].url, 'https://storage.internal.local/storage/v1/catalogs')
+    assert.equal(calls[2].url, 'https://chat.internal.local/chat/v1/rooms')
+    assert.equal(calls[3].url, 'https://storage.internal.local/storage/v1/catalogs')
   } finally {
     globalThis.fetch = originalFetch
   }
 })
 
-test('createClient({ gatewayUrl, authUrl, storageUrl, key }) honors top-level legacy service aliases', async () => {
+test('createClient({ gatewayUrl, authUrl, chatUrl, chatWsUrl, storageUrl, key }) honors top-level legacy service aliases', async () => {
   const calls: Array<{ url: string; init?: RequestInit }> = []
   const originalFetch = globalThis.fetch
   globalThis.fetch = async (url, init) => {
@@ -176,6 +206,9 @@ test('createClient({ gatewayUrl, authUrl, storageUrl, key }) honors top-level le
     if (requestUrl.endsWith('/storage/v1/catalogs')) {
       return createMockResponse({ data: [] }, 200)
     }
+    if (requestUrl.endsWith('/chat/v1/rooms')) {
+      return createMockResponse({ items: [] }, 200)
+    }
     return createMockResponse([{ id: 3 }], 200)
   }
 
@@ -184,21 +217,72 @@ test('createClient({ gatewayUrl, authUrl, storageUrl, key }) honors top-level le
       key: 'secret',
       gatewayUrl: 'https://gateway.athena-db.com',
       authUrl: 'https://auth.athena-db.com/auth/v1',
+      chatUrl: 'https://chat.athena-db.com/chat/v1',
+      chatWsUrl: 'wss://chat.athena-db.com/wss/gateway',
       storageUrl: 'https://storage.athena-db.com/storage/v1',
       experimental: { athenaStorageBackend: true },
     })
 
     await client.from('users').select('id').limit(1)
     const session = await client.auth.getSession()
+    await client.chat.room.list()
     await client.storage.listStorageCatalogs()
 
     assert.equal(session.ok, true)
-    assert.equal(calls.length, 3)
+    assert.equal(calls.length, 4)
     assert.equal(calls[0].url, 'https://gateway.athena-db.com/gateway/fetch')
     assert.equal(calls[1].url, 'https://auth.athena-db.com/auth/v1/get-session')
-    assert.equal(calls[2].url, 'https://storage.athena-db.com/storage/v1/catalogs')
+    assert.equal(calls[2].url, 'https://chat.athena-db.com/chat/v1/rooms')
+    assert.equal(calls[3].url, 'https://storage.athena-db.com/storage/v1/catalogs')
   } finally {
     globalThis.fetch = originalFetch
+  }
+})
+
+test('chat realtime connect uses configured ws url and auto-hello payload', async () => {
+  const originalWebSocket = (globalThis as { WebSocket?: unknown }).WebSocket
+  const socketCalls: Array<{ url: string; messages: string[] }> = []
+
+  class MockSocket {
+    onopen: ((event: unknown) => void) | null = null
+    onmessage: ((event: { data?: string }) => void) | null = null
+    constructor(public url: string) {
+      socketCalls.push({ url, messages: [] })
+      queueMicrotask(() => this.onopen?.({}))
+    }
+    send(data: string) {
+      socketCalls[socketCalls.length - 1]?.messages.push(data)
+    }
+    close() {}
+  }
+
+  ;(globalThis as { WebSocket?: unknown }).WebSocket = MockSocket as unknown
+
+  try {
+    const client = createClient({
+      url: 'https://acme.v3.athena-db.com',
+      key: 'secret',
+    })
+
+    client.chat.realtime.connect({
+      hello: {
+        type: 'auth.hello',
+        token: 'chat-token',
+        room_subscriptions: ['room_1'],
+      },
+    })
+
+    await new Promise(resolve => setTimeout(resolve, 0))
+
+    assert.equal(socketCalls.length, 1)
+    assert.equal(socketCalls[0].url, 'wss://acme.v3.athena-db.com/wss/gateway')
+    assert.deepEqual(JSON.parse(socketCalls[0].messages[0]), {
+      type: 'auth.hello',
+      token: 'chat-token',
+      room_subscriptions: ['room_1'],
+    })
+  } finally {
+    ;(globalThis as { WebSocket?: unknown }).WebSocket = originalWebSocket
   }
 })
 

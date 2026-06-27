@@ -877,17 +877,27 @@ test('auth.admin and auth.apiKey bindings map to expected endpoints', async () =
     })
     await client.auth.admin.email.failure.update({ id: 'failure_1', resolved: true })
     await client.auth.admin.email.failure.delete({ id: 'failure_1' })
-    await client.auth.admin.email.template.create({ templateKey: 'welcome', subjectTemplate: 'Welcome' })
+    await client.auth.admin.email.template.create({ template_key: 'welcome', subject_template: 'Welcome' })
     await client.auth.admin.email.template.get({ query: { id: 'tmpl_1' } })
     await client.auth.admin.email.template.delete({ id: 'tmpl_1' })
     await client.auth.admin.email.template.list()
-    await client.auth.admin.email.template.update({ id: 'tmpl_1', subjectTemplate: 'Welcome 2' })
+    await client.auth.admin.email.template.update({ id: 'tmpl_1', subject_template: 'Welcome 2' })
+    await client.auth.admin.email.template.send({
+      template_id: 'tmpl_1',
+      recipient_email: 'to@example.com',
+    })
+    await client.auth.admin.email.eventType.list()
     await client.auth.admin.email.list()
-    await client.auth.admin.emailTemplate.create({ templateKey: 'legacy', subjectTemplate: 'Legacy' })
+    await client.auth.admin.emailTemplate.create({ template_key: 'legacy', subject_template: 'Legacy' })
     await client.auth.admin.emailTemplate.get({ query: { id: 'legacy_tmpl_1' } })
     await client.auth.admin.emailTemplate.delete({ id: 'legacy_tmpl_1' })
     await client.auth.admin.emailTemplate.list()
-    await client.auth.admin.emailTemplate.update({ id: 'legacy_tmpl_1', subjectTemplate: 'Legacy 2' })
+    await client.auth.admin.emailTemplate.update({ id: 'legacy_tmpl_1', subject_template: 'Legacy 2' })
+    await client.auth.admin.emailTemplate.send({
+      template_id: 'legacy_tmpl_1',
+      recipient_email: 'legacy@example.com',
+    })
+    await client.auth.admin.emailEventType.list()
 
     await client.auth.apiKey.create({ name: 'user-key', expiresIn: '3600', remaining: '1000' })
     await client.auth.apiKey.get({ query: { id: 'key_1' } })
@@ -922,6 +932,8 @@ test('auth.admin and auth.apiKey bindings map to expected endpoints', async () =
     assert.ok(requestedUrls.includes('https://auth.example.com/api/auth/admin/email-template/get?id=tmpl_1'))
     assert.ok(requestedUrls.includes('https://auth.example.com/api/auth/admin/email-template/get?id=legacy_tmpl_1'))
     assert.ok(requestedUrls.includes('https://auth.example.com/api/auth/admin/email-template/update'))
+    assert.ok(requestedUrls.includes('https://auth.example.com/api/auth/admin/email-template/send'))
+    assert.ok(requestedUrls.includes('https://auth.example.com/api/auth/admin/email-event-type/list'))
     assert.ok(requestedUrls.includes('https://auth.example.com/api/auth/api-key/create'))
     assert.ok(requestedUrls.includes('https://auth.example.com/api/auth/api-key/delete-all-expired-api-keys'))
 
@@ -939,6 +951,8 @@ test('auth.admin and auth.apiKey bindings map to expected endpoints', async () =
     assert.equal(calls.find(call => call.url === 'https://auth.example.com/api/auth/admin/email-template/create')?.init?.method, 'POST')
     assert.equal(calls.find(call => call.url === 'https://auth.example.com/api/auth/admin/email-template/update')?.init?.method, 'POST')
     assert.equal(calls.find(call => call.url === 'https://auth.example.com/api/auth/admin/email-template/delete')?.init?.method, 'POST')
+    assert.equal(calls.find(call => call.url === 'https://auth.example.com/api/auth/admin/email-template/send')?.init?.method, 'POST')
+    assert.equal(calls.find(call => call.url === 'https://auth.example.com/api/auth/admin/email-event-type/list')?.init?.method, 'GET')
   } finally {
     restore()
   }
@@ -979,8 +993,8 @@ test('auth admin email-template routes reject variables above the published SDK 
     await assert.rejects(
       () =>
         client.auth.admin.email.template.create({
-          templateKey: 'welcome',
-          subjectTemplate: 'Welcome',
+          template_key: 'welcome',
+          subject_template: 'Welcome',
           variables: Array.from(
             { length: ATHENA_AUTH_MAX_TEMPLATE_VARIABLES + 1 },
             (_, index) => `variable_${index}`,
@@ -1004,8 +1018,8 @@ test('auth admin email-template routes reject derived variable names above the p
     await assert.rejects(
       () =>
         client.auth.admin.email.template.create({
-          templateKey: 'welcome',
-          subjectTemplate: 'Welcome',
+          template_key: 'welcome',
+          subject_template: 'Welcome',
           react: {
             component: DynamicVariableTemplate,
             props: {
@@ -1029,7 +1043,7 @@ test('auth.admin email-template routes render react email payload and preserve e
 
     await client.auth.admin.email.template.update({
       id: 'tmpl_1',
-      textTemplate: 'Explicit text template override',
+      text_template: 'Explicit text template override',
       react: {
         component: NewLoginDemoTemplate,
         props: {
@@ -1040,8 +1054,8 @@ test('auth.admin email-template routes render react email payload and preserve e
     })
 
     await client.auth.admin.emailTemplate.create({
-      templateKey: 'welcome',
-      subjectTemplate: 'Welcome',
+      template_key: 'welcome',
+      subject_template: 'Welcome',
       react: {
         element: buildReactEmailElement('Legacy alias path'),
         includePlainText: false,
@@ -1050,16 +1064,16 @@ test('auth.admin email-template routes render react email payload and preserve e
 
     assert.equal(calls[0].url, 'https://auth.example.com/api/auth/admin/email-template/update')
     const updateBody = JSON.parse(calls[0].init?.body as string)
-    assert.equal(updateBody.htmlTemplate.includes('We detected a new login, Ava.'), true)
-    assert.equal(updateBody.htmlTemplate.includes('https://ikiform.com/dashboard'), true)
-    assert.equal(updateBody.textTemplate, 'Explicit text template override')
+    assert.equal(updateBody.html_template.includes('We detected a new login, Ava.'), true)
+    assert.equal(updateBody.html_template.includes('https://ikiform.com/dashboard'), true)
+    assert.equal(updateBody.text_template, 'Explicit text template override')
     assert.deepEqual(updateBody.variables, ['dashboardUrl', 'name'])
     assert.equal(Object.hasOwn(updateBody, 'react'), false)
 
     assert.equal(calls[1].url, 'https://auth.example.com/api/auth/admin/email-template/create')
     const createBody = JSON.parse(calls[1].init?.body as string)
-    assert.equal(createBody.htmlTemplate.includes('Legacy alias path'), true)
-    assert.equal(Object.hasOwn(createBody, 'textTemplate'), false)
+    assert.equal(createBody.html_template.includes('Legacy alias path'), true)
+    assert.equal(Object.hasOwn(createBody, 'text_template'), false)
     assert.equal(Object.hasOwn(createBody, 'react'), false)
   } finally {
     restore()

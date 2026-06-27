@@ -77,6 +77,12 @@ export {
   defineAuthEmailTemplate,
 } from './auth/index.ts'
 export {
+  chatSdkManifest,
+  AthenaChatError,
+  unwrapChatMessage,
+  unwrapChatRoom,
+} from './chat/module.ts'
+export {
   storageSdkManifest,
   AthenaStorageError,
   AthenaStorageErrorCode,
@@ -183,6 +189,7 @@ export type {
   AthenaClientSessionOptions,
   AthenaHeaderBag,
   AthenaClientOverrideOptions,
+  AthenaCreateClientChatOptions,
   AthenaCreateClientServiceUrlConfig,
   AthenaCreateClientOptionsWithTypecheckedColumns,
   AthenaSdkClient,
@@ -193,6 +200,7 @@ export type {
   AthenaCreateClientOptionsWithStorage,
   AthenaCreateClientOptionsWithStorageAndTypecheckedColumns,
 } from './client.js'
+export type * from './chat/types.js'
 export type {
   AthenaDeleteDebugAst,
   AthenaFindManyDebugAst,
@@ -417,9 +425,16 @@ export type {
   AthenaAdminEmailTemplateListResponse,
   AthenaAdminEmailTemplateCreateRequest,
   AthenaAdminEmailTemplateUpdateRequest,
+  AthenaAdminEmailTemplateRecord,
   AthenaAdminEmailTemplateDeleteRequest,
   AthenaAdminEmailTemplateGetQuery,
   AthenaAdminEmailTemplateGetResponse,
+  AthenaAdminEmailTemplateSendRequest,
+  AthenaAdminEmailTemplateSendResponse,
+  AthenaAdminEmailEventTypeRecord,
+  AthenaAdminEmailEventTypeListResponse,
+  AthenaAuthEmailTemplateVariableBinding,
+  AthenaAuthEmailTemplateAttachment,
   AthenaLinkSocialRequest,
   AthenaUnlinkAccountRequest,
   AthenaAuthSession,

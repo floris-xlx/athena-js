@@ -173,12 +173,12 @@ acceptsNumber(ATHENA_AUTH_MAX_ADMIN_JSON_DEPTH)
 acceptsNumber(ATHENA_AUTH_MAX_TEMPLATE_VARIABLES)
 acceptsNumber(ATHENA_AUTH_MAX_TEMPLATE_VARIABLE_LENGTH)
 acceptsAdminTemplateCreateRequest({
-  templateKey: 'welcome',
-  subjectTemplate: 'Welcome to Athena',
+  template_key: 'welcome',
+  subject_template: 'Welcome to Athena',
 })
 acceptsAdminTemplateUpdateRequest({
   id: 'tmpl_1',
-  subjectTemplate: 'Updated subject',
+  subject_template: 'Updated subject',
 })
 const publicBaseClient = createClient({
   url: 'https://mirror3.athena-db.com',
@@ -189,18 +189,28 @@ const publicBaseOverrideClient = createClient({
   key: 'api-key',
   db: { url: 'https://gateway.example.com/rest/v1' },
   auth: { url: 'https://auth.example.com/auth/v1' },
+  chat: {
+    url: 'https://chat.example.com/chat/v1',
+    wsUrl: 'wss://chat.example.com/wss/gateway',
+  },
   storage: { url: 'https://storage.example.com/storage/v1' },
 })
 const directServiceClient = createClient({
   key: 'api-key',
   db: { url: 'https://gateway.example.com/rest/v1' },
   auth: { url: 'https://auth.example.com/auth/v1' },
+  chat: {
+    url: 'https://chat.example.com/chat/v1',
+    wsUrl: 'wss://chat.example.com/wss/gateway',
+  },
   storage: { url: 'https://storage.example.com/storage/v1' },
 })
 const legacyAliasClient = createClient({
   key: 'api-key',
   gatewayUrl: 'https://gateway.example.com/rest/v1',
   authUrl: 'https://auth.example.com/auth/v1',
+  chatUrl: 'https://chat.example.com/chat/v1',
+  chatWsUrl: 'wss://chat.example.com/wss/gateway',
   storageUrl: 'https://storage.example.com/storage/v1',
 })
 const fluentBuilderClient = AthenaClient.builder()
@@ -225,6 +235,10 @@ const envConfiguredClient = createClient(envString, envString, {
     baseUrl: envString,
     bearerToken: envString,
   },
+  chat: {
+    url: envString,
+    wsUrl: envString,
+  },
   client: envString,
 })
 const envConfiguredObjectClient = createClient({
@@ -232,6 +246,10 @@ const envConfiguredObjectClient = createClient({
   key: envString,
   auth: {
     baseUrl: envString,
+  },
+  chat: {
+    url: envString,
+    wsUrl: envString,
   },
   client: envString,
 })
@@ -282,12 +300,16 @@ const envBootstrapClient = AthenaClient.fromEnvironment({
   auth: {
     baseUrl: envString,
   },
+  chatUrl: envString,
+  chatWsUrl: envString,
   client: envString,
 })
 const envStrictBootstrapClient = AthenaClient.fromEnvironment({
   env: {
     ATHENA_GATEWAY_URL: 'https://gateway.example.com/rest/v1',
     ATHENA_AUTH_URL: 'https://auth.example.com/api/auth',
+    ATHENA_CHAT_URL: 'https://chat.example.com/chat/v1',
+    ATHENA_CHAT_WS_URL: 'wss://chat.example.com/wss/gateway',
     ATHENA_API_KEY: 'api-key',
   },
   experimental: {
@@ -298,6 +320,8 @@ const envStorageBootstrapClient = AthenaClient.fromEnvironment({
   env: {
     ATHENA_GATEWAY_URL: 'https://gateway.example.com/rest/v1',
     ATHENA_AUTH_URL: 'https://auth.example.com/api/auth',
+    ATHENA_CHAT_URL: 'https://chat.example.com/chat/v1',
+    ATHENA_CHAT_WS_URL: 'wss://chat.example.com/wss/gateway',
     ATHENA_STORAGE_URL: 'https://storage.example.com/storage/v1',
     ATHENA_API_KEY: 'api-key',
   },
@@ -309,6 +333,8 @@ const envStrictStorageBootstrapClient = AthenaClient.fromEnvironment({
   env: {
     ATHENA_GATEWAY_URL: 'https://gateway.example.com/rest/v1',
     ATHENA_AUTH_URL: 'https://auth.example.com/api/auth',
+    ATHENA_CHAT_URL: 'https://chat.example.com/chat/v1',
+    ATHENA_CHAT_WS_URL: 'wss://chat.example.com/wss/gateway',
     ATHENA_STORAGE_URL: 'https://storage.example.com/storage/v1',
     ATHENA_API_KEY: 'api-key',
   },
@@ -321,6 +347,8 @@ const browserBootstrapClient = createAthenaBrowserClient({
   env: {
     NEXT_PUBLIC_ATHENA_DB_API_URL: 'https://gateway.example.com/rest/v1',
     NEXT_PUBLIC_ATHENA_AUTH_URL: 'https://auth.example.com/api/auth',
+    NEXT_PUBLIC_ATHENA_CHAT_URL: 'https://chat.example.com/chat/v1',
+    NEXT_PUBLIC_ATHENA_CHAT_WS_URL: 'wss://chat.example.com/wss/gateway',
     NEXT_PUBLIC_ATHENA_API_KEY: 'public-api-key',
   },
 })
@@ -328,6 +356,8 @@ const browserStorageBootstrapClient = createAthenaBrowserClient({
   env: {
     NEXT_PUBLIC_ATHENA_DB_API_URL: 'https://gateway.example.com/rest/v1',
     NEXT_PUBLIC_ATHENA_AUTH_URL: 'https://auth.example.com/api/auth',
+    NEXT_PUBLIC_ATHENA_CHAT_URL: 'https://chat.example.com/chat/v1',
+    NEXT_PUBLIC_ATHENA_CHAT_WS_URL: 'wss://chat.example.com/wss/gateway',
     NEXT_PUBLIC_ATHENA_STORAGE_URL: 'https://storage.example.com/storage/v1',
     NEXT_PUBLIC_ATHENA_API_KEY: 'public-api-key',
   },
