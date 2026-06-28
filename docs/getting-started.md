@@ -15,6 +15,10 @@ Environment names recognized by `AthenaClient.fromEnvironment()`:
 
 - `ATHENA_URL` or `ATHENA_GATEWAY_URL`
 - `ATHENA_API_KEY` or `ATHENA_GATEWAY_API_KEY`
+- `ATHENA_AUTH_URL`
+- `ATHENA_CHAT_URL`
+- `ATHENA_CHAT_WS_URL`
+- `ATHENA_STORAGE_URL`
 
 ## 2) Install
 
@@ -37,6 +41,14 @@ const athena = createClient(process.env.ATHENA_URL!, process.env.ATHENA_API_KEY!
 });
 ```
 
+Unified-root behavior:
+
+- DB requests default to `${ATHENA_URL}/db`
+- Auth requests default to `${ATHENA_URL}/auth`
+- Chat HTTP requests default to `${ATHENA_URL}/chat`
+- Chat realtime defaults to the same host converted to `ws:` / `wss:` plus `/chat/ws`
+- Storage requests default to `${ATHENA_URL}/storage`
+
 ### `AthenaClient.builder()` (explicit configuration)
 
 ```ts
@@ -49,6 +61,10 @@ const athena = AthenaClient.builder()
   .client("web-dashboard")
   .headers({ "X-App-Region": "eu" })
   .auth({ baseUrl: process.env.ATHENA_AUTH_URL })
+  .chat({
+    url: process.env.ATHENA_CHAT_URL,
+    wsUrl: process.env.ATHENA_CHAT_WS_URL,
+  })
   .experimental({ traceQueries: true })
   .build();
 ```
@@ -64,6 +80,10 @@ const athenaWithOptions = AthenaClient.builder()
     backend: Backend.Athena,
     headers: { "X-App-Region": "eu" },
     auth: { baseUrl: process.env.ATHENA_AUTH_URL },
+    chat: {
+      url: process.env.ATHENA_CHAT_URL,
+      wsUrl: process.env.ATHENA_CHAT_WS_URL,
+    },
     experimental: { traceQueries: true },
   })
   .build();
@@ -71,8 +91,9 @@ const athenaWithOptions = AthenaClient.builder()
 
 Builder output is a drop-in `createClient(...)` replacement:
 
-- same runtime surface: `from`, `db`, `rpc`, `query`, `auth`
+- same runtime surface: `from`, `db`, `rpc`, `query`, `request`, `auth`, `chat`
 - same auth bindings/types under `client.auth.*`
+- same chat bindings/types under `client.chat.*`
 - same `experimental` flags support (`traceQueries`, `debugAst`, `retryReads`, `findManyAst`, `typecheckColumns`) plus compatibility acceptance of deprecated `enableErrorNormalization`
 
 Repeated fluent configuration calls compose:
@@ -142,9 +163,78 @@ function Example() {
 These helpers:
 
 - resolve Athena URL, API key, client name, and auth defaults from environment aliases
+- can also pass `chatUrl` and `chatWsUrl` through to the underlying Athena client
 - bind request `cookie` and bearer context automatically on the server
 - derive the current organization from `session.session.activeOrganizationId`
 - return a pre-scoped client so normal Athena queries inherit current user + org context without app-local header assembly
+
+### Use the low-level request hatch
+
+Use `client.request(...)` when the SDK has not wrapped a route yet but you still want configured service URLs, auth/session forwarding, API keys, and request context applied automatically.
+
+```ts
+const response = await athena.request<{
+  ok: boolean;
+}>({
+  service: "chat",
+  method: "POST",
+  path: "/rooms",
+  body: {
+    slug: "support",
+    name: "Support",
+  },
+});
+
+if (!response.ok) {
+  throw new Error(`request failed: ${response.status}`);
+}
+```
+
+Rules:
+
+- use `service: "db" | "auth" | "chat" | "storage"` plus `path` for configured service calls
+- use `url` for absolute one-off targets
+- use `responseType: "json" | "text" | "response"` when you need raw transport control
+
+### Chat module
+
+The root client now exposes `client.chat` for room, message, search, and realtime flows:
+
+```ts
+const athena = createClient(process.env.ATHENA_URL!, process.env.ATHENA_API_KEY!, {
+  chatWsUrl: process.env.ATHENA_CHAT_WS_URL,
+});
+
+const rooms = await athena.chat.room.list({ limit: 20 });
+const created = await athena.chat.room.create({
+  slug: "engineering",
+  name: "Engineering",
+});
+
+await athena.chat.room.message.send(created.data?.id ?? "room_1", {
+  body: "Hello team",
+});
+
+const socket = athena.chat.realtime.connect({
+  token: "chat_token",
+  onMessage(event) {
+    console.log(event);
+  },
+});
+
+socket.ping();
+socket.close();
+```
+
+Common chat surfaces:
+
+- `chat.room.list/create/get/update/archive`
+- `chat.room.readCursor.upTo`
+- `chat.room.member.list/add/remove`
+- `chat.room.message.list/send/update/delete`
+- `chat.message.reaction.add/remove`
+- `chat.message.search`
+- `chat.realtime.info/connect`
 
 ## 3.0) Optional auth context forwarding for gateway requests
 
@@ -198,7 +288,7 @@ const athena = AthenaClient.fromEnvironment({
 });
 ```
 
-It resolves common app/runtime aliases too, including `NEXT_PUBLIC_ATHENA_URL`, `NEXT_PUBLIC_ATHENA_API_KEY`, `NEXT_PUBLIC_ATHENA_CLIENT`, `ATHENA_GATEWAY_API_KEY`, `X_API_KEY`, and `NEXT_PUBLIC_ATHENA_AUTH_URL`.
+It resolves common app/runtime aliases too, including `NEXT_PUBLIC_ATHENA_URL`, `NEXT_PUBLIC_ATHENA_API_KEY`, `NEXT_PUBLIC_ATHENA_CLIENT`, `ATHENA_GATEWAY_API_KEY`, `X_API_KEY`, `NEXT_PUBLIC_ATHENA_AUTH_URL`, `NEXT_PUBLIC_ATHENA_CHAT_URL`, `NEXT_PUBLIC_ATHENA_CHAT_WS_URL`, and `NEXT_PUBLIC_ATHENA_STORAGE_URL`.
 
 ## 3.1) Optional query tracing (experimental)
 
@@ -318,7 +408,7 @@ await astClient.from('orchestral_sections').findMany({
 When enabled, clean `findMany(...)` calls send the original object AST to `/gateway/fetch`.
 Legacy compiled transport remains the default and is still used when a chain already carries filters or pagination state that the direct AST body cannot express exactly yet.
 
-## 3.3) Utility helpers from subpath exports
+## 3.4) Utility helpers from subpath exports
 
 Use `@xylex-group/athena/utils` for runtime helpers that are intentionally not in the root package export.
 

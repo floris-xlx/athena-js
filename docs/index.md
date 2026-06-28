@@ -8,13 +8,13 @@ Use these pages in sequence if you are onboarding a new codebase, or jump direct
 
 ### Track A - Runtime-first onboarding
 
-1. [`getting-started.md`](getting-started.md) - install, runtime client setup, query/writes/RPC, schema-targeting entrypoints, and practical guardrails
+1. [`getting-started.md`](getting-started.md) - install, unified-root client setup, query/writes/RPC, chat, low-level request hatch, schema-targeting entrypoints, and practical guardrails
 2. [`auth-session-forwarding.md`](auth-session-forwarding.md) - how gateway/query requests mirror Athena Auth session and bearer context into `X-Athena-Auth-*` headers
 3. [`findmany-ast-and-server-contract.md`](findmany-ast-and-server-contract.md) - canonical `findMany(...)` AST semantics, transport mapping, base-table schema targeting, cross-schema relation examples, and server follow-up work
 4. [`runtime-method-ast-models.md`](runtime-method-ast-models.md) - normalized AST/state/payload models for `select`, mutations, `rpc`, `query`, builder filters, and route selection
 5. [`select-column-aliases.md`](select-column-aliases.md) - response shaping with `customName:columnName`, array form, and alias behavior across reads/writes/RPC, including schema-qualified column references
 6. [`storage/index.md`](storage/index.md) - experimental `client.storage.*` setup, managed catalog/file workflows, binary proxy reads, error handling, and server OpenAPI storage route coverage
-7. [`api-reference.md`](api-reference.md) - exact signatures for the runtime client, builders, helpers, `@xylex-group/athena/utils`, and experimental query tracing
+7. [`api-reference.md`](api-reference.md) - exact signatures for the runtime client, `client.request(...)`, `client.chat.*`, builders, helpers, `@xylex-group/athena/utils`, and experimental query tracing
 8. [`cli-command-reference.md`](cli-command-reference.md) - CLI commands and troubleshooting
 9. [`complete-method-reference.md`](complete-method-reference.md) - exhaustive, generated method-by-method reference with examples
 
@@ -59,10 +59,12 @@ Runtime client (createClient / AthenaClient.builder)
 - Filter operations (`eq`, `gt`, `order`, etc.) are now keyed to typed row columns when row keys are known.
 - Gateway payload contracts now use JSON-safe primitives (`AthenaJsonValue`, `AthenaJsonObject`, `AthenaJsonArray`) instead of broad untyped records.
 - Typed registry `fromModel(...)` now forwards `RowOf`, `InsertOf`, and `UpdateOf` into the table builder, preserving write-contract typing.
+- `AthenaSdkClientWithAuth` now includes a first-class `chat` module plus the low-level `request(...)` escape hatch for unwrapped routes.
+- Admin email-template bindings now treat snake_case as canonical while keeping camelCase request aliases for compatibility.
 
 ## Which page to open first
 
-- If your app is mostly string-table runtime calls or schema-qualified base tables: start at [`getting-started.md`](getting-started.md).
+- If your app is mostly string-table runtime calls, schema-qualified base tables, chat routes, or raw service calls through `request(...)`: start at [`getting-started.md`](getting-started.md).
 - If your issue is `findMany(...)`, nested relation selection, cross-schema relation reads, route payload shape, or Athena server compatibility: open [`findmany-ast-and-server-contract.md`](findmany-ast-and-server-contract.md).
 - If your issue is how `select(...)`, `insert(...)`, `upsert(...)`, `update(...)`, `delete(...)`, `rpc(...)`, or `query(...)` normalize into builder state and wire payloads: open [`runtime-method-ast-models.md`](runtime-method-ast-models.md).
 - If your issue is response field naming or `customName:columnName` syntax: open [`select-column-aliases.md`](select-column-aliases.md).

@@ -133,11 +133,29 @@ All admin endpoints are server-authorized; the server enforces role/permission c
 - `client.auth.admin.email.template.create()` -> `POST /admin/email-template/create`
 - `client.auth.admin.email.template.update()` -> `POST /admin/email-template/update`
 - `client.auth.admin.email.template.delete()` -> `POST /admin/email-template/delete`
+- `client.auth.admin.email.template.send()` -> `POST /admin/email-template/send`
+- `client.auth.admin.email.eventType.list()` -> `GET /admin/email-event-type/list`
 - `client.auth.admin.emailTemplate.list()` -> `GET /admin/email-template/list` (legacy alias)
 - `client.auth.admin.emailTemplate.get()` -> `GET /admin/email-template/get` (legacy alias)
 - `client.auth.admin.emailTemplate.create()` -> `POST /admin/email-template/create` (legacy alias)
 - `client.auth.admin.emailTemplate.update()` -> `POST /admin/email-template/update` (legacy alias)
 - `client.auth.admin.emailTemplate.delete()` -> `POST /admin/email-template/delete` (legacy alias)
+- `client.auth.admin.emailTemplate.send()` -> `POST /admin/email-template/send` (legacy alias)
+- `client.auth.admin.emailEventType.list()` -> `GET /admin/email-event-type/list` (legacy alias)
+
+Canonical admin email-template payloads are now snake_case on the normalized surface:
+
+- `template_key`
+- `event_type`
+- `subject_template`
+- `text_template`
+- `html_template`
+- `variable_bindings`
+- `attachments`
+- `attachment_failure_mode`
+- `is_active`
+
+Legacy camelCase request aliases such as `templateKey`, `eventType`, `subjectTemplate`, `variableBindings`, and `attachmentFailureMode` are still accepted for compatibility.
 
 ### API key bindings
 

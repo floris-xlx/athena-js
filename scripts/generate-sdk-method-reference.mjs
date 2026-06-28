@@ -8,6 +8,7 @@ const sourceFiles = [
   'src/client.ts',
   'src/db/module.ts',
   'src/auth/types.ts',
+  'src/chat/types.ts',
   'src/storage/module.ts',
   'src/react/index.ts',
   'src/react/query-client.ts',
@@ -335,6 +336,62 @@ function exampleForPath(pathName, minArgs) {
     return `athena.db.${method}(/* ... */)`
   }
 
+  if (pathName.startsWith('athena.chat.')) {
+    const method = pathName.split('.').at(-1)
+    if (pathName === 'athena.chat.room.list') return 'await athena.chat.room.list({ limit: 20 })'
+    if (pathName === 'athena.chat.room.create') {
+      return 'await athena.chat.room.create({ slug: "engineering", name: "Engineering" })'
+    }
+    if (pathName === 'athena.chat.room.get') return 'await athena.chat.room.get("room_1")'
+    if (pathName === 'athena.chat.room.update') {
+      return 'await athena.chat.room.update("room_1", { name: "Engineering" })'
+    }
+    if (pathName === 'athena.chat.room.archive') return 'await athena.chat.room.archive("room_1")'
+    if (pathName === 'athena.chat.room.readCursor.upTo') {
+      return 'await athena.chat.room.readCursor.upTo("room_1", { seq: 42 })'
+    }
+    if (pathName === 'athena.chat.room.member.list') return 'await athena.chat.room.member.list("room_1")'
+    if (pathName === 'athena.chat.room.member.add') {
+      return 'await athena.chat.room.member.add("room_1", { user_ids: ["user_1"] })'
+    }
+    if (pathName === 'athena.chat.room.member.remove') {
+      return 'await athena.chat.room.member.remove("room_1", "user_1")'
+    }
+    if (pathName === 'athena.chat.room.message.list') {
+      return 'await athena.chat.room.message.list("room_1", { limit: 50 })'
+    }
+    if (pathName === 'athena.chat.room.message.send') {
+      return 'await athena.chat.room.message.send("room_1", { body: "Hello team" })'
+    }
+    if (pathName === 'athena.chat.room.message.update') {
+      return 'await athena.chat.room.message.update("room_1", "msg_1", { body: "Edited" })'
+    }
+    if (pathName === 'athena.chat.room.message.delete') {
+      return 'await athena.chat.room.message.delete("room_1", "msg_1")'
+    }
+    if (pathName === 'athena.chat.message.reaction.add') {
+      return 'await athena.chat.message.reaction.add("msg_1", { emoji: ":fire:" })'
+    }
+    if (pathName === 'athena.chat.message.reaction.remove') {
+      return 'await athena.chat.message.reaction.remove("msg_1", ":fire:")'
+    }
+    if (pathName === 'athena.chat.message.search') {
+      return 'await athena.chat.message.search({ query: "deploy", room_id: "room_1" })'
+    }
+    if (pathName === 'athena.chat.realtime.info') return 'await athena.chat.realtime.info()'
+    if (pathName === 'athena.chat.realtime.connect') {
+      return 'const socket = athena.chat.realtime.connect({ token: "chat_token" })'
+    }
+    if (['send', 'close', 'ping', 'readUpTo'].includes(method)) {
+      return `athena.chat.realtime.connect({ token: "chat_token" }).${method}(/* ... */)`
+    }
+    return `await ${pathName}(/* ... */)`
+  }
+
+  if (pathName === 'athena.request') {
+    return 'await athena.request({ service: "chat", method: "POST", path: "/rooms", body: { slug: "support", name: "Support" } })'
+  }
+
   if (pathName.startsWith('athena.storage.')) {
     const method = pathName.split('.').at(-1)
     if (pathName === 'athena.storage.listStorageCatalogs') return 'await athena.storage.listStorageCatalogs()'
@@ -478,6 +535,7 @@ const runtimeSelectChain = collectInterfaceMethods('src/client.ts', 'SelectChain
 const runtimeUpdateChain = collectInterfaceMethods('src/client.ts', 'UpdateChain', 'athena.from.update', { recursive: false })
 const runtimeRpcBuilder = collectInterfaceMethods('src/client.ts', 'RpcQueryBuilder', 'athena.rpc', { recursive: false })
 const runtimeDb = collectInterfaceMethods('src/db/module.ts', 'AthenaDbModule', 'athena.db', { recursive: false })
+const runtimeChat = collectInterfaceMethods('src/chat/types.ts', 'AthenaChatModule', 'athena.chat')
 const runtimeStorage = collectInterfaceMethods('src/storage/module.ts', 'AthenaStorageModule', 'athena.storage')
 
 const authBindings = collectInterfaceMethods('src/auth/types.ts', 'AthenaAuthBindings', 'athena.auth', { recursive: true })
@@ -512,6 +570,7 @@ const sections = [
       ...runtimeBuilder,
       ...runtimeClient,
       ...runtimeDb,
+      ...runtimeChat,
       ...runtimeStorage,
       ...runtimeTableBuilder,
       ...runtimeSelectChain,

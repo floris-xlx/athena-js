@@ -43,6 +43,8 @@ You can pass this directly to:
 - `auth.admin.email.template.create/update`
 - `auth.admin.emailTemplate.create/update` (legacy alias)
 
+For template routes, the normalized canonical fields are snake_case even though legacy camelCase request aliases are still accepted.
+
 ## `defineAuthEmailTemplate`
 
 Create a reusable typed definition for template routes.
@@ -137,6 +139,18 @@ For admin template routes, if `variables` is omitted and `react.props` exists:
 - `variables` is auto-derived from `Object.keys(react.props)`.
 - the SDK rejects payloads above `ATHENA_AUTH_MAX_TEMPLATE_VARIABLES`
 - the SDK rejects variable names above `ATHENA_AUTH_MAX_TEMPLATE_VARIABLE_LENGTH`
+
+For normalized admin template payloads, prefer:
+
+- `template_key`
+- `event_type`
+- `subject_template`
+- `text_template`
+- `html_template`
+- `variable_bindings`
+- `attachments`
+- `attachment_failure_mode`
+- `is_active`
 
 For email + template routes:
 

@@ -44,6 +44,8 @@ Behavior:
 - `react` is never forwarded to the backend route body
 - on template routes, `variables` is auto-derived from `Object.keys(react.props)` when `variables` is omitted
 - template routes reject more than `64` variables or variable names longer than `128` characters
+- canonical template payload fields on the normalized surface are snake_case
+- legacy camelCase request aliases are still accepted for compatibility
 
 ## Ergonomic template builder
 
@@ -79,14 +81,22 @@ Builder helpers:
 
 ## `email_templates` table mapping
 
-When you call `auth.admin.email.template.create/update` (or legacy `emailTemplate.*`), payload fields map as:
+When you call `auth.admin.email.template.create/update` (or legacy `emailTemplate.*`), the canonical normalized payload fields are:
 
-- `templateKey` -> template key column
-- `subjectTemplate` -> subject template column
-- `htmlTemplate` -> HTML template column (auto-rendered from `react`)
-- `textTemplate` -> text template column (explicit `react.text` or auto-derived from HTML)
-- `variables` -> template variable list (auto-derived from `react.props` if omitted)
-- `isActive`, `locale`, `metadata` -> persisted as provided
+- `template_key`
+- `event_type`
+- `subject_template`
+- `html_template` (auto-rendered from `react`)
+- `text_template` (explicit `react.text` or auto-derived from HTML)
+- `variables` (auto-derived from `react.props` if omitted)
+- `variable_bindings`
+- `attachments`
+- `attachment_failure_mode`
+- `is_active`
+- `locale`
+- `metadata`
+
+Legacy request aliases such as `templateKey`, `subjectTemplate`, `htmlTemplate`, `textTemplate`, `variableBindings`, `attachmentFailureMode`, and `isActive` are accepted but normalized internally.
 
 ## Render observability
 
@@ -166,7 +176,7 @@ function NewLoginEmail(props: { dashboardUrl: string; name?: string }) {
 
 await client.auth.admin.email.template.update({
   id: "tmpl_1",
-  subjectTemplate: "New Login to Ikiform",
+  subject_template: "New Login to Ikiform",
   react: {
     component: NewLoginEmail,
     props: {
@@ -215,8 +225,8 @@ function NewLoginEmail(props: NewLoginEmailProps) {
 }
 
 await client.auth.admin.email.template.create({
-  templateKey: "new_login",
-  subjectTemplate: "New Login to xxxx",
+  template_key: "new_login",
+  subject_template: "New Login to xxxx",
   react: {
     component: NewLoginEmail,
     props: {
