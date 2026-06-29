@@ -9,5 +9,5 @@ test('package metadata uses athena-js branding', async () => {
   }
 
   assert.equal(pkg.name, '@xylex-group/athena')
-  assert.equal(pkg.bin['athena-js'], './bin/athena-js.js')
+  assert.equal(pkg.bin['athena-js'], 'bin/athena-js.js')
 })
